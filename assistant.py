@@ -73,3 +73,50 @@ def greet_user():
         speak("Good evening! I'm your voice assistant. How may I assist you?")
     else:
         speak("Hello! It's late, but I'm here to help. What do you need?")
+
+
+def listen():
+    """
+    Listen to the user's voice through the microphone and
+    convert it to text using Google's free Speech Recognition API.
+
+    Returns:
+        str: The recognized text in lowercase, or None if not understood.
+    """
+    recognizer = sr.Recognizer()
+
+    # Use the default microphone as the audio source
+    try:
+        with sr.Microphone() as source:
+            print("\n🎤 Listening... (speak now)")
+
+            # Adjust for background noise (takes ~1 second)
+            recognizer.adjust_for_ambient_noise(source, duration=1)
+
+            # Listen to the user (timeout after 5 sec, phrase limit 8 sec)
+            audio = recognizer.listen(source, timeout=5, phrase_time_limit=8)
+
+    except sr.WaitTimeoutError:
+        print("⏰ No speech detected within the timeout period.")
+        return None
+    except OSError:
+        speak("I couldn't access your microphone. Please check if it's connected.")
+        return None
+
+    # Try to recognize what the user said
+    try:
+        print("🔄 Processing your speech...")
+        text = recognizer.recognize_google(audio, language='en-in')
+        print(f"🗣️  You said: {text}")
+        return text.lower()
+
+    except sr.UnknownValueError:
+        # Could not understand the audio
+        speak("Sorry, I didn't catch that. Could you please repeat?")
+        return None
+
+    except sr.RequestError:
+        # No internet or Google API issue
+        speak("I'm having trouble connecting to the internet. "
+              "Please check your connection and try again.")
+        return None
