@@ -120,3 +120,17 @@ def listen():
         speak("I'm having trouble connecting to the internet. "
               "Please check your connection and try again.")
         return None
+
+
+def tell_time():
+    """Tell the current time in a natural way."""
+    now = datetime.datetime.now()
+    time_str = now.strftime("%I:%M %p")  # e.g., "02:30 PM"
+    speak(f"The current time is {time_str}.")
+
+
+def tell_date():
+    """Tell today's date in a natural way."""
+    now = datetime.datetime.now()
+    date_str = now.strftime("%A, %B %d, %Y")  # e.g., "Monday, April 27, 2026"
+    speak(f"Today is {date_str}.")
