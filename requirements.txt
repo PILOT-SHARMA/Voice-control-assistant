@@ -1,0 +1,15 @@
+# ==========================================
+# Voice-Controlled Assistant - Dependencies
+# ==========================================
+# Install all dependencies at once with:
+#   pip install -r requirements.txt
+# ==========================================
+
+# Speech Recognition — converts voice to text using Google API (free)
+SpeechRecognition>=3.10.0
+
+# PyAudio — required by SpeechRecognition to access the microphone
+PyAudio>=0.2.14
+
+# pyttsx3 — offline text-to-speech engine (no internet needed)
+pyttsx3>=2.90
