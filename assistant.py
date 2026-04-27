@@ -400,3 +400,90 @@ def listen_for_wake_word():
 
     except (sr.UnknownValueError, sr.RequestError):
         return False
+
+
+# ──────────────────────────────────────────────
+# 6. MAIN FUNCTION — ENTRY POINT
+# ──────────────────────────────────────────────
+
+def main():
+    """
+    Main function that runs the voice assistant.
+
+    Flow:
+    1. Greet the user
+    2. Wait for wake word (optional — can be skipped)
+    3. Listen for commands
+    4. Process commands
+    5. Repeat until user says "stop" or "exit"
+    """
+
+    print("=" * 55)
+    print("   🎙️  VOICE-CONTROLLED ASSISTANT  🎙️")
+    print("=" * 55)
+    print("   Commands you can try:")
+    print("   • 'Open YouTube / Google / Gmail'")
+    print("   • 'What time is it?'")
+    print("   • 'What is today's date?'")
+    print("   • 'Search for Python tutorials'")
+    print("   • 'Play music'")
+    print("   • 'Hello / How are you?'")
+    print("   • 'Stop' to exit")
+    print("=" * 55)
+
+    # Greet the user based on time of day
+    greet_user()
+
+    # ── MAIN LOOP ──
+    # The assistant keeps listening until the user says "stop"
+    running = True
+    use_wake_word = False  # Set to True to enable wake word detection
+
+    while running:
+        try:
+            # ── WAKE WORD MODE ──
+            if use_wake_word:
+                wake_detected = listen_for_wake_word()
+                if not wake_detected:
+                    continue  # Keep waiting for the wake word
+
+            # ── LISTEN FOR COMMAND ──
+            command = listen()
+
+            if command is None:
+                continue  # Didn't understand, try again
+
+            # ── CHECK FOR WAKE WORD IN COMMAND ──
+            # (In case user says "Hey Assistant, open YouTube")
+            for wake in ["hey assistant", "hello assistant", "ok assistant"]:
+                command = command.replace(wake, "").strip()
+
+            if not command:
+                continue  # Empty after removing wake word
+
+            # ── PROCESS THE COMMAND ──
+            running = process_command(command)
+
+        except KeyboardInterrupt:
+            # Handle Ctrl+C gracefully
+            print("\n")
+            speak("Detected keyboard interrupt. Shutting down gracefully. Goodbye!")
+            running = False
+
+        except Exception as e:
+            # Catch any unexpected errors
+            print(f"\n❌ An unexpected error occurred: {e}")
+            speak("Something went wrong. Let me try again.")
+            continue
+
+    print("\n" + "=" * 55)
+    print("   👋 Assistant has been shut down. See you next time!")
+    print("=" * 55)
+
+
+# ──────────────────────────────────────────────
+# 7. RUN THE PROGRAM
+# ──────────────────────────────────────────────
+
+if __name__ == "__main__":
+    main()
