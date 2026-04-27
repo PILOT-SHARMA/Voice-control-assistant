@@ -137,6 +137,6 @@ def toggle_wake_word():
 if __name__ == "__main__":
     print("=" * 55)
     print("   🌐 VOICE ASSISTANT FLASK SERVER RUNNING 🌐")
-    print("   Access the UI at: http://localhost:5000")
+    print("   Access the UI at: http://localhost:5001")
     print("=" * 55)
-    app.run(debug=True, port=5000, use_reloader=False)
+    app.run(debug=True, port=5001, use_reloader=False)
