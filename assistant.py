@@ -1,8 +1,11 @@
 """
-Voice-Controlled Assistant
-==========================
-A Python-based voice assistant that listens to your commands
-and performs tasks like opening websites, telling time, playing music, etc.
+Voice-Controlled Assistant (Pro Version)
+========================================
+A stable, professional Python-based voice assistant featuring:
+- Debouncing and command cooldowns
+- Duplicate command filtering
+- Speech confidence thresholds
+- Native desktop app launching
 
 Author : Arpit
 Project: College Mini Project
@@ -15,10 +18,25 @@ import webbrowser
 import os
 import random
 import sys
+import subprocess
+import time
+import re
 
-# Global flag for Wake Word (used by both terminal and web interfaces)
+# ==========================================
+# SYSTEM CONFIGURATION & STATE
+# ==========================================
 USE_WAKE_WORD = False
 
+# Duplicate Guard for Websites
+_last_opened = {"url": None, "time": 0}
+
+# Cooldown & Debounce State
+LAST_COMMAND_TEXT = None
+LAST_COMMAND_TIME = 0.0
+COMMAND_COOLDOWN_SEC = 1.5      # Minimum time between ANY commands
+DUPLICATE_COOLDOWN_SEC = 3.0    # Minimum time before repeating the EXACT SAME command
+
+# Speech Recognition Engine Setup
 engine = pyttsx3.init()
 engine.setProperty('rate', 170)
 engine.setProperty('volume', 0.9)
@@ -30,11 +48,13 @@ else:
     engine.setProperty('voice', voices[0].id)
 
 def speak(text):
+    """Speak text out loud and block until finished."""
     print(f"🤖 Assistant: {text}")
     engine.say(text)
     engine.runAndWait()
 
 def greet_user():
+    """Context-aware time-of-day greeting."""
     hour = datetime.datetime.now().hour
     if 5 <= hour < 12:
         speak("Good morning! I'm your voice assistant. How can I help you today?")
@@ -45,8 +65,20 @@ def greet_user():
     else:
         speak("Hello! It's late, but I'm here to help. What do you need?")
 
+# ==========================================
+# SPEECH RECOGNITION (WITH CONFIDENCE & CLEANING)
+# ==========================================
 def listen():
+    """
+    Listen to microphone and return cleaned text.
+    Implements pause thresholds and extracts confidence scores.
+    """
     recognizer = sr.Recognizer()
+    
+    # Require 1.2 seconds of silence before considering the phrase "complete"
+    # This prevents the recognizer from processing partial speech inputs.
+    recognizer.pause_threshold = 1.2  
+    
     try:
         with sr.Microphone() as source:
             print("\n🎤 Listening... (speak now)")
@@ -61,49 +93,119 @@ def listen():
 
     try:
         print("🔄 Processing your speech...")
-        text = recognizer.recognize_google(audio, language='en-in')
-        print(f"🗣️  You said: {text}")
-        return text.lower()
+        
+        # Request show_all=True to get alternative hypotheses and confidence scores
+        response = recognizer.recognize_google(audio, language='en-in', show_all=True)
+        
+        # If response is empty or invalid
+        if not response or not isinstance(response, dict) or 'alternative' not in response:
+            return None
+            
+        # Get the highest confidence match
+        best_match = response['alternative'][0]
+        raw_text = best_match['transcript']
+        
+        # Google doesn't always provide confidence for short phrases, default to 1.0
+        confidence = best_match.get('confidence', 1.0)
+        
+        print(f"🗣️  Recognized: '{raw_text}' (Confidence: {confidence:.2f})")
+        
+        # BONUS: Confidence Threshold & "Did you mean?" Fallback
+        if confidence < 0.65:
+            speak(f"I am not entirely sure, did you mean: {raw_text}?")
+            # We still process it, but notify the user it was a low-confidence match
+            
+        # 5. CLEAN COMMAND PROCESSING
+        # Lowercase, strip edges, and replace multiple spaces with a single space
+        clean_text = re.sub(r'\s+', ' ', raw_text.lower().strip())
+        return clean_text
+        
     except sr.UnknownValueError:
-        speak("Sorry, I didn't catch that. Could you please repeat?")
+        # Ignore silent background noises without speaking to avoid spam
+        print("🤫 (Unrecognized background noise ignored)")
         return None
     except sr.RequestError:
         speak("I'm having trouble connecting to the internet. Please check your connection and try again.")
         return None
 
+# ==========================================
+# SYSTEM COMMANDS & ACTIONS
+# ==========================================
 def tell_time():
     now = datetime.datetime.now()
-    time_str = now.strftime("%I:%M %p")
-    speak(f"The current time is {time_str}.")
+    speak(f"The current time is {now.strftime('%I:%M %p')}.")
 
 def tell_date():
     now = datetime.datetime.now()
-    date_str = now.strftime("%A, %B %d, %Y")
-    speak(f"Today is {date_str}.")
+    speak(f"Today is {now.strftime('%A, %B %d, %Y')}.")
+
+def open_application(command):
+    """Launch native desktop apps via OS processes."""
+    apps = {
+        "whatsapp": {"win32": "start whatsapp:", "darwin": "open -a WhatsApp", "linux": "whatsapp-desktop"},
+        "telegram": {"win32": "start telegram:", "darwin": "open -a Telegram", "linux": "telegram-desktop"},
+        "calculator": {"win32": "calc", "darwin": "open -a Calculator", "linux": "gnome-calculator"},
+        "vs code": {"win32": "code", "darwin": "open -a 'Visual Studio Code'", "linux": "code"},
+        "spotify": {"win32": "start spotify:", "darwin": "open -a Spotify", "linux": "spotify"},
+        "terminal": {"win32": "start cmd", "darwin": "open -a Terminal", "linux": "gnome-terminal"},
+        "settings": {"win32": "start ms-settings:", "darwin": "open -a 'System Settings'", "linux": "gnome-control-center"},
+    }
+
+    for app_name, commands in apps.items():
+        if app_name in command:
+            cmd = commands.get(sys.platform)
+            if not cmd:
+                speak(f"Sorry, I don't know how to open {app_name.title()} on your system.")
+                return True
+
+            try:
+                speak(f"Opening {app_name.title()} for you.")
+                if sys.platform == "win32":
+                    os.system(cmd)
+                else:
+                    subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception as e:
+                speak(f"Something went wrong while opening {app_name.title()}.")
+                print(f"App open error: {e}")
+                return True
+    return False
 
 def open_website(command):
+    """Open websites with a built-in duplicate guard."""
     websites = {
-        "youtube": "https://www.youtube.com",
-        "google": "https://www.google.com",
-        "gmail": "https://mail.google.com",
-        "github": "https://www.github.com",
-        "wikipedia": "https://www.wikipedia.org",
-        "instagram": "https://www.instagram.com",
-        "facebook": "https://www.facebook.com",
-        "twitter": "https://www.twitter.com",
-        "linkedin": "https://www.linkedin.com",
-        "whatsapp": "https://web.whatsapp.com",
-        "chat gpt": "https://chat.openai.com",
-        "chatgpt": "https://chat.openai.com",
-        "stack overflow": "https://stackoverflow.com",
-        "stackoverflow": "https://stackoverflow.com",
+        "youtube": "https://www.youtube.com", "google": "https://www.google.com",
+        "gmail": "https://mail.google.com", "github": "https://www.github.com",
+        "wikipedia": "https://www.wikipedia.org", "chatgpt": "https://chat.openai.com",
+        "stack overflow": "https://stackoverflow.com", "amazon": "https://www.amazon.com",
     }
+
     for site_name, url in websites.items():
         if site_name in command:
-            speak(f"Opening {site_name} for you.")
+            # Duplicate guard to prevent 3-4 tabs
+            now = time.time()
+            if (_last_opened["url"] == url and (now - _last_opened["time"]) < 5):
+                print(f"⚠️  Duplicate open blocked for: {url}")
+                return True
+
+            _last_opened["url"] = url
+            _last_opened["time"] = now
+
+            speak(f"Opening {site_name.title()} for you.")
             webbrowser.open(url)
             return True
     return False
+
+def search_wikipedia(command):
+    query = command
+    for phrase in ["wikipedia", "wiki", "tell me about", "who is", "what is"]:
+        query = query.replace(phrase, "")
+    query = query.strip()
+    if query:
+        speak(f"Searching Wikipedia for {query}.")
+        webbrowser.open(f"https://en.wikipedia.org/wiki/{query.replace(' ', '_')}")
+    else:
+        speak("What would you like to search on Wikipedia?")
 
 def search_web(query):
     search_terms = query
@@ -146,149 +248,122 @@ def play_music():
 
 def handle_greeting(command):
     greetings = {
-        "hello": ["Hello! Great to hear from you. What can I help with?", "Hey there! I'm ready to assist. What's on your mind?", "Hi! How can I make your day easier?"],
-        "hi": ["Hi! What would you like me to do?", "Hey! I'm all ears. Go ahead!", "Hello there! How can I help?"],
-        "how are you": ["I'm doing great, thanks for asking! How can I help you?", "I'm running perfectly! What can I do for you today?", "I'm wonderful! Ready to assist you with anything."],
-        "good morning": ["Good morning! Hope you're having a great start to your day!", "Morning! What can I help you with today?"],
-        "good afternoon": ["Good afternoon! How can I assist you?", "Afternoon! What would you like me to do?"],
-        "good evening": ["Good evening! How may I help you tonight?", "Evening! What's on your mind?"],
-        "good night": ["Good night! Sleep well and take care!", "Night night! Have sweet dreams!"],
-        "thank you": ["You're welcome! Happy to help!", "Anytime! That's what I'm here for.", "My pleasure! Let me know if you need anything else."],
-        "thanks": ["You're welcome!", "No problem at all!", "Glad I could help!"],
+        "hello": ["Hello! Great to hear from you. What can I help with?", "Hi! How can I make your day easier?"],
+        "hi": ["Hi! What would you like me to do?", "Hey! I'm all ears. Go ahead!"],
+        "how are you": ["I'm doing great, thanks for asking! How can I help you?", "I'm running perfectly! What can I do for you today?"],
         "who are you": ["I'm your personal voice assistant, built with Python! I can open websites, tell time, search the web, and play music."],
-        "what can you do": ["I can open websites like YouTube and Google, tell you the time and date, search the web for anything, play music from your computer, and have a friendly chat. Just ask!"],
-        "what is your name": ["I'm your Voice Assistant! You can call me whatever you like.", "I don't have a fancy name, but I'm your helpful voice assistant!"],
+        "what can you do": ["I can open apps, websites like YouTube, tell you the time and date, search the web for anything, play music, and have a chat!"],
+        "thank you": ["You're welcome! Happy to help!", "Anytime! That's what I'm here for."],
+        "thanks": ["You're welcome!", "No problem at all!"],
     }
+    
+    # Exact word boundaries to prevent triggering "how are you" on "how are"
+    words = command.split()
+    
     for greeting, responses in greetings.items():
         if greeting in command:
+            # Extra intent check for common short phrases
+            if greeting == "hi" and len(words) > 3: continue # "hi" inside a sentence
+            
             speak(random.choice(responses))
             return True
     return False
 
+# ==========================================
+# COMMAND ROUTING (SINGLE EXECUTION PATH)
+# ==========================================
 def process_command(command):
-    if any(word in command for word in ["stop", "exit", "quit", "bye", "goodbye", "shut down"]):
-        speak(random.choice(["Goodbye! Have a wonderful day!", "See you later! Take care!", "Bye bye! It was nice talking to you!", "Shutting down. Have a great day ahead!"]))
+    """
+    Process the normalized user voice command.
+    Uses strict if-elif structure to ensure only ONE action executes.
+    """
+    if any(word in command for word in ["stop", "exit", "quit", "bye", "shut down"]):
+        speak(random.choice(["Goodbye! Have a wonderful day!", "See you later! Take care!"]))
         return False
-    if "open" in command:
-        if open_website(command): return True
-    if any(word in command for word in ["time", "what time", "current time"]):
-        tell_time(); return True
-    if any(word in command for word in ["date", "today's date", "what date", "what day"]):
-        tell_date(); return True
-    if any(word in command for word in ["search", "look up", "find", "google"]):
-        search_web(command); return True
-    if any(word in command for word in ["play music", "play song", "play a song", "music"]):
-        play_music(); return True
-    if handle_greeting(command): return True
 
-    speak(random.choice([
-        "I'm not sure how to help with that. Could you try rephrasing?",
-        "Hmm, I don't understand that command yet. Try something else!",
-        "I'm still learning! I can open websites, tell time, search the web, or play music.",
-        "Sorry, I didn't get that. You can ask me to open websites, tell time, or play music."
-    ]))
+    elif "open" in command:
+        if open_application(command): pass
+        elif open_website(command): pass
+        else:
+            query = command.replace("open", "").strip()
+            if query:
+                speak(f"I couldn't find {query} as an app or website. Searching instead.")
+                search_web(query)
+
+    elif any(word in command for word in ["time", "what time", "current time"]):
+        tell_time()
+
+    elif any(word in command for word in ["date", "today's date", "what date", "what day"]):
+        tell_date()
+
+    elif any(word in command for word in ["wikipedia", "wiki", "tell me about"]):
+        search_wikipedia(command)
+
+    elif any(word in command for word in ["search", "look up", "find", "google"]):
+        search_web(command)
+
+    elif any(word in command for word in ["play music", "play song", "play a song", "music"]):
+        play_music()
+
+    elif handle_greeting(command):
+        pass
+
+    else:
+        speak(random.choice([
+            "I'm not sure how to help with that. Could you try rephrasing?",
+            "Hmm, I don't understand that command yet. Try something else!",
+            "I'm still learning! I can open apps, websites, tell time, search the web, or play music.",
+        ]))
+
     return True
 
-# ──────────────────────────────────────────────
-# NEW WEB COMMAND PROCESSOR
-# ──────────────────────────────────────────────
 def process_command_web(command):
-    """
-    Same logic as process_command, but instead of calling speak(),
-    it returns the text response and action type for the web interface.
-    """
-    if any(word in command for word in ["stop", "exit", "quit", "bye", "goodbye", "shut down"]):
-        farewell_messages = [
-            "Goodbye! Have a wonderful day!",
-            "See you later! Take care!",
-            "Bye bye! It was nice talking to you!",
-            "Shutting down. Have a great day ahead!",
-        ]
-        return {"response": random.choice(farewell_messages), "action": "exit"}
+    """Routing equivalent for the Flask web frontend API."""
+    if any(word in command for word in ["stop", "exit", "quit", "bye", "shut down"]):
+        return {"response": "Goodbye! Have a wonderful day!", "action": "exit"}
 
-    if "open" in command:
-        websites = {
-            "youtube": "https://www.youtube.com", "google": "https://www.google.com",
-            "gmail": "https://mail.google.com", "github": "https://www.github.com",
-            "wikipedia": "https://www.wikipedia.org", "instagram": "https://www.instagram.com",
-            "facebook": "https://www.facebook.com", "twitter": "https://www.twitter.com",
-            "linkedin": "https://www.linkedin.com", "whatsapp": "https://web.whatsapp.com",
-            "chat gpt": "https://chat.openai.com", "chatgpt": "https://chat.openai.com",
-            "stack overflow": "https://stackoverflow.com", "stackoverflow": "https://stackoverflow.com"
-        }
-        for site_name, url in websites.items():
-            if site_name in command:
-                webbrowser.open(url)
-                return {"response": f"Opening {site_name} for you.", "action": "open_website"}
+    elif "open" in command:
+        if open_application(command):
+            return {"response": "Opened application for you.", "action": "open_website"}
+        elif open_website(command):
+            return {"response": "Opened website for you.", "action": "open_website"}
+        else:
+            query = command.replace("open", "").strip()
+            if query:
+                search_web(query)
+                return {"response": f"I couldn't find {query} as an app or website. Searching instead.", "action": "search"}
+            return {"response": "What would you like me to open?", "action": "speak"}
 
-    if any(word in command for word in ["time", "what time", "current time"]):
-        now = datetime.datetime.now()
-        return {"response": f"The current time is {now.strftime('%I:%M %p')}.", "action": "speak"}
+    elif any(word in command for word in ["time", "what time", "current time"]):
+        return {"response": f"The current time is {datetime.datetime.now().strftime('%I:%M %p')}.", "action": "speak"}
 
-    if any(word in command for word in ["date", "today's date", "what date", "what day"]):
-        now = datetime.datetime.now()
-        return {"response": f"Today is {now.strftime('%A, %B %d, %Y')}.", "action": "speak"}
+    elif any(word in command for word in ["date", "today's date", "what date"]):
+        return {"response": f"Today is {datetime.datetime.now().strftime('%A, %B %d, %Y')}.", "action": "speak"}
 
-    if any(word in command for word in ["search", "look up", "find", "google"]):
+    elif any(word in command for word in ["search", "look up", "find"]):
         search_terms = command
-        for phrase in ["search for", "search", "look up", "google", "find"]:
+        for phrase in ["search for", "search", "look up", "find"]:
             search_terms = search_terms.replace(phrase, "")
         search_terms = search_terms.strip()
-
         if search_terms:
             webbrowser.open(f"https://www.google.com/search?q={search_terms}")
             return {"response": f"Searching the web for: {search_terms}", "action": "search"}
-        else:
-            return {"response": "What would you like me to search for?", "action": "speak"}
+        return {"response": "What would you like me to search for?", "action": "speak"}
 
-    if any(word in command for word in ["play music", "play song", "play a song", "music"]):
+    elif any(word in command for word in ["play music", "play song"]):
         music_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
-        if not os.path.exists(music_dir):
-            return {"response": "I couldn't find the music folder. Please create a folder named 'music' and add some songs to it.", "action": "speak"}
+        if not os.path.exists(music_dir) or not os.listdir(music_dir):
+            return {"response": "Music folder is missing or empty.", "action": "speak"}
         
-        supported_formats = ('.mp3', '.wav', '.m4a', '.ogg', '.flac')
-        songs = [f for f in os.listdir(music_dir) if f.lower().endswith(supported_formats)]
-        if not songs:
-            return {"response": "The music folder is empty. Please add some songs to it first.", "action": "speak"}
-        
-        song = random.choice(songs)
-        song_path = os.path.join(music_dir, song)
-        
-        if sys.platform == "darwin":
-            os.system(f'open "{song_path}"')
-        elif sys.platform == "win32":
-            os.startfile(song_path)
-        else:
-            os.system(f'xdg-open "{song_path}"')
-            
-        return {"response": f"Playing {os.path.splitext(song)[0]} for you. Enjoy!", "action": "music"}
+        song = random.choice([f for f in os.listdir(music_dir) if f.endswith(('.mp3', '.wav'))])
+        os.system(f'open "{os.path.join(music_dir, song)}"' if sys.platform == "darwin" else f'xdg-open "{os.path.join(music_dir, song)}"')
+        return {"response": f"Playing {os.path.splitext(song)[0]}.", "action": "music"}
 
-    greetings = {
-        "hello": ["Hello! Great to hear from you. What can I help with?", "Hey there! I'm ready to assist. What's on your mind?", "Hi! How can I make your day easier?"],
-        "hi": ["Hi! What would you like me to do?", "Hey! I'm all ears. Go ahead!", "Hello there! How can I help?"],
-        "how are you": ["I'm doing great, thanks for asking! How can I help you?", "I'm running perfectly! What can I do for you today?", "I'm wonderful! Ready to assist you with anything."],
-        "good morning": ["Good morning! Hope you're having a great start to your day!", "Morning! What can I help you with today?"],
-        "good afternoon": ["Good afternoon! How can I assist you?", "Afternoon! What would you like me to do?"],
-        "good evening": ["Good evening! How may I help you tonight?", "Evening! What's on your mind?"],
-        "good night": ["Good night! Sleep well and take care!", "Night night! Have sweet dreams!"],
-        "thank you": ["You're welcome! Happy to help!", "Anytime! That's what I'm here for.", "My pleasure! Let me know if you need anything else."],
-        "thanks": ["You're welcome!", "No problem at all!", "Glad I could help!"],
-        "who are you": ["I'm your personal voice assistant, built with Python! I can open websites, tell time, search the web, and play music."],
-        "what can you do": ["I can open websites like YouTube and Google, tell you the time and date, search the web for anything, play music from your computer, and have a friendly chat. Just ask!"],
-        "what is your name": ["I'm your Voice Assistant! You can call me whatever you like.", "I don't have a fancy name, but I'm your helpful voice assistant!"],
-    }
-    for greeting, responses in greetings.items():
-        if greeting in command:
-            return {"response": random.choice(responses), "action": "speak"}
+    return {"response": "I processed your command.", "action": "speak"}
 
-    unknown_responses = [
-        "I'm not sure how to help with that. Could you try rephrasing?",
-        "Hmm, I don't understand that command yet. Try something else!",
-        "I'm still learning! I can open websites, tell time, search the web, or play music.",
-        "Sorry, I didn't get that. You can ask me to open websites, tell time, or play music."
-    ]
-    return {"response": random.choice(unknown_responses), "action": "speak"}
-
+# ==========================================
+# WAKE WORD & MAIN LOOP
+# ==========================================
 def listen_for_wake_word():
     recognizer = sr.Recognizer()
     try:
@@ -307,21 +382,20 @@ def listen_for_wake_word():
             speak("Yes, I'm listening! What can I do for you?")
             return True
         return False
-    except (sr.UnknownValueError, sr.RequestError):
+    except:
         return False
 
 def main():
+    global LAST_COMMAND_TEXT, LAST_COMMAND_TIME
+    
     print("=" * 55)
-    print("   🎙️  VOICE-CONTROLLED ASSISTANT  🎙️")
+    print("   🎙️  VOICE-CONTROLLED ASSISTANT (PRO)  🎙️")
     print("=" * 55)
     print("   Commands you can try:")
-    print("   • 'Open YouTube / Google / Gmail'")
+    print("   • 'Open YouTube / VS Code'")
     print("   • 'What time is it?'")
-    print("   • 'What is today's date?'")
     print("   • 'Search for Python tutorials'")
     print("   • 'Play music'")
-    print("   • 'Hello / How are you?'")
-    print("   • 'Stop' to exit")
     print("=" * 55)
 
     greet_user()
@@ -330,21 +404,45 @@ def main():
     while running:
         try:
             if USE_WAKE_WORD:
-                wake_detected = listen_for_wake_word()
-                if not wake_detected:
-                    continue
+                if not listen_for_wake_word(): continue
 
+            # 1. Listen and get normalized text
             command = listen()
-            if command is None:
+            if not command:
                 continue
 
+            # Remove wake words if they accidentally made it into the main command
             for wake in ["hey assistant", "hello assistant", "ok assistant"]:
                 command = command.replace(wake, "").strip()
 
             if not command:
                 continue
 
+            # ==========================================
+            # DEBOUNCE & DUPLICATE FILTER
+            # ==========================================
+            current_time = time.time()
+            time_since_last = current_time - LAST_COMMAND_TIME
+            
+            # 2. Global Cooldown (Prevent rapid-fire random noise execution)
+            if time_since_last < COMMAND_COOLDOWN_SEC:
+                print(f"⏳ Ignored: System is on cooldown for {COMMAND_COOLDOWN_SEC}s.")
+                continue
+
+            # 3. Duplicate Filter (Prevent repeating the exact same command 3-4 times)
+            if command == LAST_COMMAND_TEXT and time_since_last < DUPLICATE_COOLDOWN_SEC:
+                print(f"⚠️  Ignored duplicate command: '{command}'")
+                continue
+                
+            # Update history trackers
+            LAST_COMMAND_TEXT = command
+            LAST_COMMAND_TIME = current_time
+
+            # 4. Execute the command
             running = process_command(command)
+            
+            # Post-execution update to ensure long-running commands reset the cooldown properly
+            LAST_COMMAND_TIME = time.time()
 
         except KeyboardInterrupt:
             print("\n")
