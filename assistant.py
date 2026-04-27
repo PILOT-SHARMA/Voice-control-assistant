@@ -364,3 +364,39 @@ def process_command(command):
     ]
     speak(random.choice(unknown_responses))
     return True
+
+
+# ──────────────────────────────────────────────
+# 5. WAKE WORD DETECTION
+# ──────────────────────────────────────────────
+
+def listen_for_wake_word():
+    """
+    Listen for the wake word "hey assistant" to activate the assistant.
+    This runs continuously until the wake word is detected.
+
+    Returns:
+        bool: True if wake word detected, False on error.
+    """
+    recognizer = sr.Recognizer()
+
+    try:
+        with sr.Microphone() as source:
+            print("\n💤 Waiting for wake word ('Hey Assistant')...")
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            audio = recognizer.listen(source, timeout=10, phrase_time_limit=4)
+
+    except sr.WaitTimeoutError:
+        return False  # No speech detected, just try again
+    except OSError:
+        return False  # Microphone issue
+
+    try:
+        text = recognizer.recognize_google(audio, language='en-in').lower()
+        if any(wake in text for wake in ["hey assistant", "hello assistant", "ok assistant"]):
+            speak("Yes, I'm listening! What can I do for you?")
+            return True
+        return False
+
+    except (sr.UnknownValueError, sr.RequestError):
+        return False
