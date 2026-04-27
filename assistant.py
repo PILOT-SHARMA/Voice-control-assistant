@@ -295,3 +295,72 @@ def handle_greeting(command):
             return True
 
     return False
+
+
+# ──────────────────────────────────────────────
+# 4. MAIN COMMAND PROCESSOR
+# ──────────────────────────────────────────────
+
+def process_command(command):
+    """
+    Process the user's voice command and perform the appropriate action.
+
+    This is the brain of the assistant — it decides what to do
+    based on what the user said.
+
+    Args:
+        command (str): The recognized text from user's speech.
+
+    Returns:
+        bool: False if the user wants to exit, True otherwise.
+    """
+
+    # ── EXIT COMMANDS ──
+    if any(word in command for word in ["stop", "exit", "quit", "bye", "goodbye", "shut down"]):
+        farewell_messages = [
+            "Goodbye! Have a wonderful day!",
+            "See you later! Take care!",
+            "Bye bye! It was nice talking to you!",
+            "Shutting down. Have a great day ahead!",
+        ]
+        speak(random.choice(farewell_messages))
+        return False  # Signal to stop the main loop
+
+    # ── OPEN WEBSITE ──
+    if "open" in command:
+        if open_website(command):
+            return True
+
+    # ── TIME ──
+    if any(word in command for word in ["time", "what time", "current time"]):
+        tell_time()
+        return True
+
+    # ── DATE ──
+    if any(word in command for word in ["date", "today's date", "what date", "what day"]):
+        tell_date()
+        return True
+
+    # ── WEB SEARCH ──
+    if any(word in command for word in ["search", "look up", "find", "google"]):
+        search_web(command)
+        return True
+
+    # ── PLAY MUSIC ──
+    if any(word in command for word in ["play music", "play song", "play a song", "music"]):
+        play_music()
+        return True
+
+    # ── GREETINGS ──
+    if handle_greeting(command):
+        return True
+
+    # ── UNKNOWN COMMAND ──
+    unknown_responses = [
+        "I'm not sure how to help with that. Could you try rephrasing?",
+        "Hmm, I don't understand that command yet. Try something else!",
+        "I'm still learning! I can open websites, tell time, search the web, or play music.",
+        "Sorry, I didn't get that. You can ask me to open websites, tell time, or play music.",
+    ]
+    speak(random.choice(unknown_responses))
+    return True
