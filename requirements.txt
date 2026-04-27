@@ -13,3 +13,9 @@ PyAudio>=0.2.14
 
 # pyttsx3 — offline text-to-speech engine (no internet needed)
 pyttsx3>=2.90
+
+# Flask — Python web framework for frontend
+Flask>=3.0.0
+
+# Flask-CORS — Handles cross-origin requests for API calls
+flask-cors>=4.0.0
