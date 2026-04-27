@@ -167,3 +167,61 @@ def open_website(command):
             return True
 
     return False
+
+
+def search_web(query):
+    """
+    Perform a Google search for the given query.
+    Cleans up the query by removing trigger words.
+    """
+    # Remove common trigger phrases to get the actual search query
+    search_terms = query
+    for phrase in ["search for", "search", "look up", "google", "find"]:
+        search_terms = search_terms.replace(phrase, "")
+
+    search_terms = search_terms.strip()
+
+    if search_terms:
+        speak(f"Searching the web for: {search_terms}")
+        url = f"https://www.google.com/search?q={search_terms}"
+        webbrowser.open(url)
+    else:
+        speak("What would you like me to search for?")
+
+
+def play_music():
+    """
+    Play a random music file from the 'music' folder.
+    Supports .mp3 and .wav files.
+    """
+    # Path to the music folder (inside the project directory)
+    music_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
+
+    # Check if the music folder exists
+    if not os.path.exists(music_dir):
+        speak("I couldn't find the music folder. "
+              "Please create a folder named 'music' and add some songs to it.")
+        return
+
+    # Get list of audio files
+    supported_formats = ('.mp3', '.wav', '.m4a', '.ogg', '.flac')
+    songs = [f for f in os.listdir(music_dir) if f.lower().endswith(supported_formats)]
+
+    if not songs:
+        speak("The music folder is empty. Please add some songs to it first.")
+        return
+
+    # Pick a random song and play it
+    song = random.choice(songs)
+    song_path = os.path.join(music_dir, song)
+    song_name = os.path.splitext(song)[0]  # Remove file extension for display
+
+    speak(f"Playing {song_name} for you. Enjoy!")
+
+    # Open the song with the default media player
+    if sys.platform == "darwin":        # macOS
+        os.system(f'open "{song_path}"')
+    elif sys.platform == "win32":       # Windows
+        os.startfile(song_path)
+    else:                                # Linux
+        os.system(f'xdg-open "{song_path}"')
