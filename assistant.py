@@ -134,3 +134,36 @@ def tell_date():
     now = datetime.datetime.now()
     date_str = now.strftime("%A, %B %d, %Y")  # e.g., "Monday, April 27, 2026"
     speak(f"Today is {date_str}.")
+
+
+def open_website(command):
+    """
+    Open a website based on the user's command.
+    Supports common websites and also custom URLs.
+    """
+    # Dictionary of common websites
+    websites = {
+        "youtube": "https://www.youtube.com",
+        "google": "https://www.google.com",
+        "gmail": "https://mail.google.com",
+        "github": "https://www.github.com",
+        "wikipedia": "https://www.wikipedia.org",
+        "instagram": "https://www.instagram.com",
+        "facebook": "https://www.facebook.com",
+        "twitter": "https://www.twitter.com",
+        "linkedin": "https://www.linkedin.com",
+        "whatsapp": "https://web.whatsapp.com",
+        "chat gpt": "https://chat.openai.com",
+        "chatgpt": "https://chat.openai.com",
+        "stack overflow": "https://stackoverflow.com",
+        "stackoverflow": "https://stackoverflow.com",
+    }
+
+    # Check if the user mentioned any known website
+    for site_name, url in websites.items():
+        if site_name in command:
+            speak(f"Opening {site_name} for you.")
+            webbrowser.open(url)
+            return True
+
+    return False
