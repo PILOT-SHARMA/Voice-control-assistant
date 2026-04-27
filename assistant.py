@@ -225,3 +225,73 @@ def play_music():
         os.startfile(song_path)
     else:                                # Linux
         os.system(f'xdg-open "{song_path}"')
+
+
+def handle_greeting(command):
+    """
+    Respond to basic greetings in a natural, human-like way.
+    Returns True if a greeting was detected, False otherwise.
+    """
+    greetings = {
+        "hello": [
+            "Hello! Great to hear from you. What can I help with?",
+            "Hey there! I'm ready to assist. What's on your mind?",
+            "Hi! How can I make your day easier?",
+        ],
+        "hi": [
+            "Hi! What would you like me to do?",
+            "Hey! I'm all ears. Go ahead!",
+            "Hello there! How can I help?",
+        ],
+        "how are you": [
+            "I'm doing great, thanks for asking! How can I help you?",
+            "I'm running perfectly! What can I do for you today?",
+            "I'm wonderful! Ready to assist you with anything.",
+        ],
+        "good morning": [
+            "Good morning! Hope you're having a great start to your day!",
+            "Morning! What can I help you with today?",
+        ],
+        "good afternoon": [
+            "Good afternoon! How can I assist you?",
+            "Afternoon! What would you like me to do?",
+        ],
+        "good evening": [
+            "Good evening! How may I help you tonight?",
+            "Evening! What's on your mind?",
+        ],
+        "good night": [
+            "Good night! Sleep well and take care!",
+            "Night night! Have sweet dreams!",
+        ],
+        "thank you": [
+            "You're welcome! Happy to help!",
+            "Anytime! That's what I'm here for.",
+            "My pleasure! Let me know if you need anything else.",
+        ],
+        "thanks": [
+            "You're welcome!",
+            "No problem at all!",
+            "Glad I could help!",
+        ],
+        "who are you": [
+            "I'm your personal voice assistant, built with Python! "
+            "I can open websites, tell time, search the web, and play music.",
+        ],
+        "what can you do": [
+            "I can open websites like YouTube and Google, tell you the time and date, "
+            "search the web for anything, play music from your computer, "
+            "and have a friendly chat. Just ask!",
+        ],
+        "what is your name": [
+            "I'm your Voice Assistant! You can call me whatever you like.",
+            "I don't have a fancy name, but I'm your helpful voice assistant!",
+        ],
+    }
+
+    for greeting, responses in greetings.items():
+        if greeting in command:
+            speak(random.choice(responses))
+            return True
+
+    return False
