@@ -36,22 +36,20 @@ LAST_COMMAND_TIME = 0.0
 COMMAND_COOLDOWN_SEC = 1.5      # Minimum time between ANY commands
 DUPLICATE_COOLDOWN_SEC = 3.0    # Minimum time before repeating the EXACT SAME command
 
-# Speech Recognition Engine Setup
-engine = pyttsx3.init()
-engine.setProperty('rate', 170)
-engine.setProperty('volume', 0.9)
-
-voices = engine.getProperty('voices')
-if len(voices) > 1:
-    engine.setProperty('voice', voices[1].id)
-else:
-    engine.setProperty('voice', voices[0].id)
-
 def speak(text):
-    """Speak text out loud and block until finished."""
-    print(f"🤖 Assistant: {text}")
-    engine.say(text)
-    engine.runAndWait()
+    """Speak text out loud using macOS native TTS engine (JARVIS Voice)."""
+    print(f"🤖 J.A.R.V.I.S: {text}")
+    clean_text = text.replace('"', '').replace("'", "")
+    
+    # We use Daniel voice (British male) at a slightly faster rate for the perfect JARVIS feel
+    if sys.platform == "darwin":
+        subprocess.run(['say', '-v', 'Daniel', '-r', '185', clean_text])
+    else:
+        # Fallback for non-macOS (though we are on a Mac)
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.say(text)
+        engine.runAndWait()
 
 def greet_user():
     """Context-aware time-of-day greeting."""
@@ -318,27 +316,27 @@ def process_command(command):
     return True
 
 def process_command_web(command):
-    """Routing equivalent for the Flask web frontend API."""
+    """Routing equivalent for the Flask web frontend API — BOSS MODE."""
     if any(word in command for word in ["stop", "exit", "quit", "bye", "shut down"]):
-        return {"response": "Goodbye! Have a wonderful day!", "action": "exit"}
+        return {"response": "Alright Boss, signing off! Have a great day! 👋🤖", "action": "exit"}
 
     elif "open" in command:
         if open_application(command):
-            return {"response": "Opened application for you.", "action": "open_website"}
+            return {"response": "Yes Boss! Opening the application right away! 🚀", "action": "open_website"}
         elif open_website(command):
-            return {"response": "Opened website for you.", "action": "open_website"}
+            return {"response": "Yes Boss! Opening the website for you! 🌐", "action": "open_website"}
         else:
             query = command.replace("open", "").strip()
             if query:
                 search_web(query)
-                return {"response": f"I couldn't find {query} as an app or website. Searching instead.", "action": "search"}
-            return {"response": "What would you like me to open?", "action": "speak"}
+                return {"response": f"Yes Boss! Couldn't find {query} as an app, searching the web instead! 🔍", "action": "search"}
+            return {"response": "What would you like me to open, Boss? 🤔", "action": "speak"}
 
     elif any(word in command for word in ["time", "what time", "current time"]):
-        return {"response": f"The current time is {datetime.datetime.now().strftime('%I:%M %p')}.", "action": "speak"}
+        return {"response": f"Yes Boss! The current time is {datetime.datetime.now().strftime('%I:%M %p')} ⏰", "action": "speak"}
 
     elif any(word in command for word in ["date", "today's date", "what date"]):
-        return {"response": f"Today is {datetime.datetime.now().strftime('%A, %B %d, %Y')}.", "action": "speak"}
+        return {"response": f"Yes Boss! Today is {datetime.datetime.now().strftime('%A, %B %d, %Y')} 📅", "action": "speak"}
 
     elif any(word in command for word in ["search", "look up", "find"]):
         search_terms = command
@@ -347,19 +345,64 @@ def process_command_web(command):
         search_terms = search_terms.strip()
         if search_terms:
             webbrowser.open(f"https://www.google.com/search?q={search_terms}")
-            return {"response": f"Searching the web for: {search_terms}", "action": "search"}
-        return {"response": "What would you like me to search for?", "action": "speak"}
+            return {"response": f"Yes Boss! Searching the web for: {search_terms} 🔍", "action": "search"}
+        return {"response": "What should I search for, Boss? 🤔", "action": "speak"}
 
     elif any(word in command for word in ["play music", "play song"]):
         music_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
         if not os.path.exists(music_dir) or not os.listdir(music_dir):
-            return {"response": "Music folder is missing or empty.", "action": "speak"}
+            return {"response": "Sorry Boss, the music folder is empty! Add some songs first 🎵", "action": "speak"}
         
         song = random.choice([f for f in os.listdir(music_dir) if f.endswith(('.mp3', '.wav'))])
         os.system(f'open "{os.path.join(music_dir, song)}"' if sys.platform == "darwin" else f'xdg-open "{os.path.join(music_dir, song)}"')
-        return {"response": f"Playing {os.path.splitext(song)[0]}.", "action": "music"}
+        return {"response": f"Yes Boss! Playing {os.path.splitext(song)[0]} 🎵🎶", "action": "music"}
 
-    return {"response": "I processed your command.", "action": "speak"}
+    # Handle greetings — BOSS STYLE
+    greetings_map = {
+        "hello": ["Yes Boss! 🫡 Hello! How can I help you today?", "Hey Boss! What can I do for you? 🤖"],
+        "hi": ["Yes Boss! What's on the agenda? 🫡", "Hey Boss! Ready for your commands! 🚀"],
+        "hey": ["Yes Boss! What's up? I'm all ears! 🫡", "Hey Boss! Ready to help! 🤖"],
+        "how are you": ["I'm running at 100% Boss! All systems operational! ⚡🤖", "Feeling great Boss! Ready to serve! 🫡"],
+        "who are you": ["I'm J.A.R.V.I.S — your personal AI assistant, Boss! I can open apps, websites, search the web, play music, tell time, and chat with you! 🤖✨"],
+        "what can you do": ["Boss, I can do a lot! 🚀 Open apps & websites • Search the web • Tell time & date • Play music • Chat with you • Execute your commands!"],
+        "thank you": ["Always at your service, Boss! 🫡", "No problem Boss! That's what I'm here for! 🤖"],
+        "thanks": ["Anytime Boss! 🫡", "Happy to help, Boss! 🤖"],
+        "good morning": ["Good morning Boss! ☀️ Ready to make your day productive!"],
+        "good night": ["Good night Boss! 🌙 Rest well, I'll be here when you need me!"],
+        "joke": [
+            "Yes Boss! Here's one: Why do programmers prefer dark mode? Because light attracts bugs! 🐛😄",
+            "Sure Boss! Why was the JavaScript developer sad? Because he didn't Node how to Express himself! 😂",
+            "Here you go Boss! What's a computer's favorite snack? Microchips! 🍟😄",
+        ],
+        "tell me a joke": [
+            "Yes Boss! Why do programmers prefer dark mode? Because light attracts bugs! 🐛😄",
+            "Sure thing Boss! I told my computer I needed a break, and now it won't stop sending me Kit-Kat ads! 🍫😂",
+            "Of course Boss! What did the router say to the doctor? It hurts when IP! 😂",
+        ],
+    }
+
+    for key, responses in greetings_map.items():
+        if key in command:
+            return {"response": random.choice(responses), "action": "speak"}
+
+    # Smart conversational fallback — BOSS STYLE
+    smart_responses = {
+        "python": "Yes Boss! Python is a powerful programming language used for web dev, AI, data science, automation, and more! 🐍",
+        "javascript": "Yes Boss! JavaScript is the language of the web — it powers interactive websites, servers (Node.js), and mobile apps! 💻",
+        "ai": "Yes Boss! AI is the simulation of human intelligence by machines — including ML, deep learning, NLP, and computer vision! 🤖",
+        "weather": "Boss, I can't check live weather yet, but say 'Search weather in [your city]' and I'll Google it! 🌤️",
+        "news": "Boss, say 'Search latest news' and I'll open Google News for you right away! 📰",
+        "help": "Boss, here's what I can do: 🎤 Voice commands • 💬 Chat • 🌐 Open websites • 🔍 Search • 🎵 Play music • ⏰ Time & date",
+        "music": "Yes Boss! Say 'play music' and I'll play a song from your collection! 🎵",
+        "who made you": "I was created by Arpit Sharma as a college mini project, Boss! Built with Python, Flask, and lots of ❤️",
+        "your name": "I'm J.A.R.V.I.S, Boss! Your personal AI assistant! 🤖",
+    }
+
+    for key, response in smart_responses.items():
+        if key in command:
+            return {"response": response, "action": "speak"}
+
+    return {"response": f"Yes Boss! I heard you say '{command}'. I'm still learning new things, but try asking me to open apps, search the web, or just chat! 🤖💬", "action": "speak"}
 
 # ==========================================
 # WAKE WORD & MAIN LOOP

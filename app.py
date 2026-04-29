@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import json
 import os
@@ -8,7 +8,7 @@ import queue
 import assistant
 from assistant import process_command_web
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 CORS(app)
 
 HISTORY_FILE = "chat_history.json"
@@ -20,23 +20,23 @@ history_lock = threading.Lock()
 tts_queue = queue.Queue()
 
 def tts_worker():
-    import pyttsx3
-    engine = pyttsx3.init()
-    engine.setProperty('rate', 170)
-    engine.setProperty('volume', 0.9)
-    voices = engine.getProperty('voices')
-    if len(voices) > 1:
-        engine.setProperty('voice', voices[1].id)
-    else:
-        engine.setProperty('voice', voices[0].id)
-        
+    import subprocess
     while True:
         text = tts_queue.get()
         if text is None:
             break
         print(f"🤖 Assistant (Server TTS): {text}")
-        engine.say(text)
-        engine.runAndWait()
+        
+        # Clean text for the terminal command (remove quotes)
+        clean_text = text.replace('"', '').replace("'", "")
+        
+        # Using macOS native 'say' command with Daniel voice (JARVIS style)
+        # It's much more stable in background threads on Mac than pyttsx3
+        try:
+            subprocess.run(['say', '-v', 'Daniel', '-r', '185', clean_text])
+        except Exception as e:
+            print(f"TTS Error: {e}")
+            
         tts_queue.task_done()
 
 threading.Thread(target=tts_worker, daemon=True).start()
