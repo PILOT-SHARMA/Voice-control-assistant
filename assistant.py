@@ -55,7 +55,7 @@ def speak(text):
     """Queue text for TTS — dedup identical phrases within 3 seconds."""
     with _tts_dedup_lock:
         now = time.time()
-        if _tts_last["text"] == text and now - _tts_last["t"] < 3.0:
+        if _tts_last["text"] == text and now - _tts_last["t"] < 5.0:
             print(f"🔇 Skipped duplicate: {text}")
             return
         _tts_last["text"] = text
@@ -294,26 +294,6 @@ def _route(command):
     if any(p in command for p in ["can i move forward", "is the path clear", "is path clear",
                                    "can i go", "kya rasta saaf hai"]):
         return vs.query_path() if vs else "Camera not ready"
-
-    # ── COLOR QUERIES ──
-    if any(p in command for p in ["what color", "what colour", "which color", "which colour",
-                                   "konsa colour", "kis colour", "color of", "colour of"]):
-        # Extract target: "what color is the bottle" → "bottle"
-        target = None
-        for w in ["color is the", "colour is the", "color of the", "colour of the",
-                   "color is", "colour is", "color of", "colour of",
-                   "colour ka", "color ka"]:
-            if w in command:
-                target = command.split(w)[-1].strip()
-                break
-        return vs.query_color(target) if vs else "Camera not ready"
-
-    # ── WEARING COLOR ──
-    if any(p in command for p in ["what am i wearing", "what color am i wearing",
-                                   "kya pehna hai", "konsa colour pehna"]):
-        if vs:
-            return vs.query_color("clothing")
-        return "Camera not ready"
 
     # ── DISTANCE QUERIES ──
     if any(p in command for p in ["how far", "kitni door", "kitni duri", "what is the distance",

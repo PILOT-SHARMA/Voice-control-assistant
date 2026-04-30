@@ -55,14 +55,26 @@ def index():
 
 
 # ──────────────────────────────────────────────
-# CHAT / COMMAND API
+# CHAT / COMMAND API (with request-level dedup)
 # ──────────────────────────────────────────────
+_chat_last = {"cmd": None, "t": 0, "resp": None}
+_chat_lock = threading.Lock()
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data = request.json
     command = data.get("message", "").lower().strip()
     if not command:
         return jsonify({"error": "No message provided"}), 400
+
+    # Request-level dedup: skip identical commands within 4 seconds
+    with _chat_lock:
+        now = time.time()
+        if _chat_last["cmd"] == command and now - _chat_last["t"] < 4.0:
+            # Return cached response without speaking again
+            cached = _chat_last["resp"] or {"response": "", "action": "ignore"}
+            cached["mode"] = mode_manager.mode
+            return jsonify(cached)
 
     result = process_command_web(command)
     response_text = result.get("response", "")
@@ -71,9 +83,13 @@ def chat():
     if response_text and result.get("action") != "ignore":
         speak(response_text)
 
-    # Include current mode in response
-    result["mode"] = mode_manager.mode
+    # Cache this response
+    with _chat_lock:
+        _chat_last["cmd"] = command
+        _chat_last["t"] = time.time()
+        _chat_last["resp"] = result.copy()
 
+    result["mode"] = mode_manager.mode
     return jsonify(result)
 
 
@@ -184,7 +200,6 @@ def get_detections():
             "zone": d["zone"],
             "distance": d["distance"],
             "distance_m": d.get("distance_m", ""),
-            "color": d.get("color", "unknown"),
             "confidence": round(d["confidence"], 2),
             "area_ratio": round(d.get("area_ratio", 0), 4),
         })

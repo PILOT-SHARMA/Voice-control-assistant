@@ -160,8 +160,7 @@ header{background:linear-gradient(135deg,rgba(9,14,26,.98),rgba(14,21,37,.98));p
         <div class="cmd-chip" onclick="sendTextCmd('what is in my hand')">✋ In my hand</div>
         <div class="cmd-chip" onclick="sendTextCmd('what is in front of me')">👁 In front</div>
         <div class="cmd-chip" onclick="sendTextCmd('can i move forward')">🚶 Path clear?</div>
-        <div class="cmd-chip color" onclick="sendTextCmd('what color is the object')">🎨 Color?</div>
-        <div class="cmd-chip color" onclick="sendTextCmd('what am i wearing')">👕 Wearing?</div>
+        <div class="cmd-chip" onclick="sendTextCmd('what is the person holding')">🧑 Person holding</div>
         <div class="cmd-chip" onclick="sendTextCmd('how far is the object')">📏 Distance?</div>
         <div class="cmd-chip" onclick="sendTextCmd('describe the scene')">🔍 Full scene</div>
         <div class="cmd-chip nav" onclick="sendTextCmd('next step')">➡️ Next step</div>
@@ -206,13 +205,29 @@ window.addEventListener('DOMContentLoaded',()=>{
 function setOutput(t){const e=document.getElementById('assistant-output');e.textContent=t;e.classList.add('flash');setTimeout(()=>e.classList.remove('flash'),2500)}
 function showToast(t,type='info'){const toast=document.getElementById('alertToast'),icon=document.getElementById('alertIcon'),msg=document.getElementById('alertText');toast.className=`alert-toast toast-${type}`;icon.textContent=type==='danger'?'🚨':type==='warning'?'⚠️':'ℹ️';msg.textContent=t;toast.style.display='flex';clearTimeout(alertTimer);alertTimer=setTimeout(()=>{toast.style.display='none'},5000)}
 
+let isProcessing = false;
+
 async function sendTextCmd(cmd){
+  if(isProcessing) return; // block concurrent commands
+  isProcessing = true;
   setOutput(`You: "${cmd}"`);
+
+  // PAUSE mic so it doesn't pick up TTS output
+  const wasListening = recogEnabled;
+  if(wasListening && recog){ try{recog.abort()}catch(e){} recogRunning=false; }
+  clearTimeout(recogRestart);
+
   try{
     const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:cmd})});
     const data=await res.json();
     if(data.response&&data.action!=='ignore') setOutput(data.response);
   }catch(e){setOutput('Connection error.')}
+
+  // Wait for TTS to finish before resuming mic (Daniel takes ~2-4 sec)
+  isProcessing = false;
+  if(wasListening){
+    setTimeout(()=>{ if(recogEnabled && !recogRunning) startRecog(); }, 3500);
+  }
 }
 
 async function startNav(){
@@ -226,7 +241,7 @@ async function startNav(){
 let recog=null,recogRunning=false,recogEnabled=false,recogRestart=null,lastSentCmd='',lastSentTime=0;
 
 function startRecog(){
-  if(!recogEnabled||recogRunning)return;
+  if(!recogEnabled||recogRunning||isProcessing)return;
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR)return;
   recog=new SR();recog.lang='en-IN';recog.continuous=false;recog.interimResults=true;recog.maxAlternatives=3;
@@ -241,7 +256,7 @@ function startRecog(){
     if(interim)document.getElementById('micSub').textContent=`"${interim}"`;
     if(final){
       const now=Date.now();
-      if(final===lastSentCmd&&now-lastSentTime<3000)return;
+      if(final===lastSentCmd&&now-lastSentTime<5000)return; // 5s dedup
       lastSentCmd=final;lastSentTime=now;
       document.getElementById('micSub').textContent=`Heard: "${final}"`;
       await sendTextCmd(final);
@@ -252,9 +267,9 @@ function startRecog(){
     const msg={'no-speech':'No speech — listening again…','audio-capture':'❌ Mic not found','not-allowed':'❌ Mic blocked','network':'❌ Network error','aborted':'Stopped.'}[e.error]||`Error: ${e.error}`;
     document.getElementById('micSub').textContent=msg;
     if(['audio-capture','not-allowed','service-not-allowed'].includes(e.error)){recogEnabled=false;setMicUI(false,'Tap to speak',msg);return}
-    if(recogEnabled)scheduleRestart(800);
+    if(recogEnabled && !isProcessing)scheduleRestart(800);
   };
-  recog.onend=()=>{recogRunning=false;if(recogEnabled)scheduleRestart(300);else setMicUI(false,'Tap to speak','Microphone off')};
+  recog.onend=()=>{recogRunning=false;if(recogEnabled && !isProcessing)scheduleRestart(500);else if(!recogEnabled) setMicUI(false,'Tap to speak','Microphone off')};
   try{recog.start()}catch(e){recogRunning=false;scheduleRestart(1000)}
 }
 function scheduleRestart(ms){clearTimeout(recogRestart);recogRestart=setTimeout(startRecog,ms)}
@@ -262,8 +277,7 @@ function stopRecog(){clearTimeout(recogRestart);recogEnabled=false;recogRunning=
 function setMicUI(a,s,sub){const b=document.getElementById('micBtn');if(a){b.classList.add('active');b.innerHTML='<div class="mic-ring"></div>🔴'}else{b.classList.remove('active');b.innerHTML='<div class="mic-ring"></div>🎤'}document.getElementById('micStatus').textContent=s;document.getElementById('micSub').textContent=sub}
 function toggleMic(){if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){setOutput('❌ Use Chrome browser');return}if(recogEnabled)stopRecog();else{recogEnabled=true;startRecog()}}
 
-// ═══ COLOR MAP ═══
-const CSS_COLORS={red:'#ef4444',orange:'#f97316',yellow:'#eab308',green:'#22c55e',blue:'#3b82f6',purple:'#a855f7',pink:'#ec4899',black:'#1a1a2e',white:'#f1f5f9',gray:'#6b7280',unknown:'transparent'};
+
 
 // ═══ ZONES ═══
 function updateZones(dets){
@@ -307,9 +321,8 @@ async function pollDetections(){
       const body=document.getElementById('logBody');body.innerHTML='';
       data.detections.forEach(d=>{
         const row=document.createElement('div');row.className='log-entry';
-        const c=CSS_COLORS[d.color]||'transparent';
         const dm=d.distance_m?d.distance_m+'m':'';
-        row.innerHTML=`<span class="log-time">${dm}</span><span class="log-name ${d.distance==='very close'?'danger':d.distance==='near'?'warning':'info'}">${d.color!=='unknown'?d.color+' ':''}${d.class}</span><span class="log-badge ${distClass(d.distance)}">${d.zone}</span><div class="color-dot" style="background:${c}"></div>`;
+        row.innerHTML=`<span class="log-time">${dm}</span><span class="log-name ${d.distance==='very close'?'danger':d.distance==='near'?'warning':'info'}">${d.class}</span><span class="log-badge ${distClass(d.distance)}">${d.zone}</span><span></span>`;
         body.appendChild(row);
       });
     }
