@@ -16,9 +16,12 @@ Flask>=3.0.0                  # Web server
 flask-cors>=4.0.0             # Cross-origin support
 
 # --- Computer Vision ---
-opencv-python>=4.8.0          # Webcam capture & image processing
+opencv-python-headless>=4.8.0 # Headless OpenCV for Linux servers (Render)
 ultralytics>=8.0.0            # YOLOv8 object detection
-numpy>=1.24.0                 # Array processing (color detection)
+numpy>=1.24.0                 # Array processing
+
+# --- Production Server ---
+gunicorn>=21.2.0              # WSGI server for Render
 
 # --- AI Image Analysis (Gemini) ---
 google-generativeai>=0.4.0    # Google Gemini API
