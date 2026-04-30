@@ -1,1144 +1,331 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VisionGuide — AI Assistant for Blind Users</title>
-  <meta name="description"
-    content="Real-time AI voice assistant with object detection and hand tracking for visually impaired users">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
-    rel="stylesheet">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box
-    }
-
-    :root {
-      --bg: #050810;
-      --g1: #090e1a;
-      --g2: #0e1525;
-      --g3: #141d32;
-      --g4: #1c2a45;
-      --border: rgba(255, 255, 255, .06);
-      --border2: rgba(255, 255, 255, .1);
-      --text: #e2e8f0;
-      --muted: #4a5568;
-      --muted2: #718096;
-      --blue: #4f8ef7;
-      --cyan: #22d3ee;
-      --green: #34d399;
-      --yellow: #fbbf24;
-      --red: #f87171;
-      --orange: #fb923c;
-      --purple: #a78bfa;
-      --glow-blue: 0 0 30px rgba(79, 142, 247, .25);
-      --glow-red: 0 0 24px rgba(248, 113, 113, .35);
-      --glow-green: 0 0 24px rgba(52, 211, 153, .25);
-      --glow-cyan: 0 0 20px rgba(34, 211, 238, .2);
-      --r: 12px;
-      --r2: 18px;
-    }
-
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column
-    }
-
-    /* ── HEADER ── */
-    header {
-      background: linear-gradient(135deg, rgba(9, 14, 26, .98), rgba(14, 21, 37, .98));
-      padding: 12px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(20px);
-      flex-shrink: 0;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px
-    }
-
-    .brand-icon {
-      width: 38px;
-      height: 38px;
-      background: linear-gradient(135deg, var(--blue), var(--cyan));
-      border-radius: 11px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      box-shadow: var(--glow-blue);
-      flex-shrink: 0;
-    }
-
-    .brand h1 {
-      font-size: 1.05rem;
-      font-weight: 800;
-      letter-spacing: -.4px
-    }
-
-    .brand h1 span {
-      background: linear-gradient(135deg, var(--blue), var(--cyan));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent
-    }
-
-    .brand-sub {
-      font-size: .62rem;
-      color: var(--muted2);
-      font-weight: 500;
-      margin-top: 1px
-    }
-
-    .header-right {
-      display: flex;
-      align-items: center;
-      gap: 10px
-    }
-
-    .status-pill {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 6px 14px;
-      border-radius: 100px;
-      font-size: .68rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      border: 1px solid;
-      transition: all .4s;
-    }
-
-    .pill-live {
-      background: rgba(52, 211, 153, .08);
-      border-color: rgba(52, 211, 153, .2);
-      color: var(--green)
-    }
-
-    .pill-live .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--green);
-      animation: pulse-dot 1.5s infinite
-    }
-
-    @keyframes pulse-dot {
-
-      0%,
-      100% {
-        opacity: 1;
-        transform: scale(1)
-      }
-
-      50% {
-        opacity: .5;
-        transform: scale(.8)
-      }
-    }
-
-    .pill-idle {
-      background: rgba(74, 85, 104, .08);
-      border-color: rgba(74, 85, 104, .2);
-      color: var(--muted2)
-    }
-
-    .pill-idle .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--muted2)
-    }
-
-    /* ── MAIN LAYOUT ── */
-    .layout {
-      display: grid;
-      grid-template-columns: 1fr 380px;
-      gap: 0;
-      flex: 1;
-      overflow: hidden
-    }
-
-    /* ── CAMERA SECTION ── */
-    .cam-section {
-      position: relative;
-      background: #000;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    #camFeed {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block
-    }
-
-    /* Camera offline placeholder */
-    .cam-placeholder {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: var(--g1);
-      color: var(--muted2);
-      gap: 12px;
-    }
-
-    .cam-placeholder .cam-icon {
-      font-size: 3rem;
-      opacity: .3
-    }
-
-    .cam-spinner {
-      width: 36px;
-      height: 36px;
-      border: 3px solid rgba(79, 142, 247, .15);
-      border-top-color: var(--blue);
-      border-radius: 50%;
-      animation: spin .9s linear infinite;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg)
-      }
-    }
-
-    /* Zone overlay on camera */
-    .zone-bar {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      background: linear-gradient(transparent, rgba(5, 8, 16, .9));
-      padding: 20px 0 12px;
-    }
-
-    .zone {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      padding: 8px 6px;
-      font-size: .6rem;
-      font-weight: 700;
-      letter-spacing: .8px;
-      text-transform: uppercase;
-      transition: all .3s;
-      border-radius: 8px;
-      margin: 0 4px;
-    }
-
-    .zone.clear {
-      color: rgba(52, 211, 153, .7)
-    }
-
-    .zone.occupied {
-      color: var(--red);
-      background: rgba(248, 113, 113, .08);
-      box-shadow: inset 0 0 0 1px rgba(248, 113, 113, .15)
-    }
-
-    .zone.warning {
-      color: var(--yellow);
-      background: rgba(251, 191, 36, .07)
-    }
-
-    .zone-arrow {
-      font-size: 1.1rem
-    }
-
-    .zone-label {
-      font-size: .55rem;
-      opacity: .7;
-      margin-top: 1px
-    }
-
-    /* Corner camera badge */
-    .cam-badge {
-      position: absolute;
-      top: 14px;
-      left: 14px;
-      background: rgba(5, 8, 16, .8);
-      backdrop-filter: blur(8px);
-      border: 1px solid var(--border2);
-      border-radius: 8px;
-      padding: 5px 10px;
-      font-size: .62rem;
-      font-weight: 600;
-      color: var(--green);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .cam-badge-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--red);
-      animation: pulse-dot 1.2s infinite
-    }
-
-    /* ── RIGHT PANEL ── */
-    .right-panel {
-      background: var(--g1);
-      border-left: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    /* Output section */
-    .output-section {
-      padding: 20px;
-      border-bottom: 1px solid var(--border);
-      background: linear-gradient(180deg, var(--g2) 0%, var(--g1) 100%);
-      flex-shrink: 0;
-    }
-
-    .section-label {
-      font-size: .6rem;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: var(--muted2);
-      font-weight: 600;
-      margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .section-label::before {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border)
-    }
-
-    .section-label::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border)
-    }
-
-    #assistant-output {
-      font-size: 1.1rem;
-      font-weight: 500;
-      line-height: 1.55;
-      min-height: 64px;
-      padding: 14px 16px;
-      background: rgba(0, 0, 0, .25);
-      border-radius: 10px;
-      border: 1px solid var(--border2);
-      color: var(--text);
-      transition: all .3s;
-      word-break: break-word;
-    }
-
-    #assistant-output.flash {
-      color: #fff;
-      border-color: rgba(79, 142, 247, .4);
-      box-shadow: var(--glow-blue)
-    }
-
-    /* Mic area */
-    .mic-area {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-shrink: 0;
-    }
-
-    .mic-btn {
-      width: 58px;
-      height: 58px;
-      border-radius: 50%;
-      border: none;
-      cursor: pointer;
-      background: linear-gradient(145deg, var(--blue), var(--cyan));
-      color: #fff;
-      font-size: 1.4rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all .2s;
-      box-shadow: var(--glow-blue);
-      flex-shrink: 0;
-      position: relative;
-    }
-
-    .mic-btn:hover {
-      transform: scale(1.06);
-      box-shadow: 0 0 40px rgba(79, 142, 247, .45)
-    }
-
-    .mic-btn.active {
-      background: linear-gradient(145deg, var(--red), var(--orange));
-      box-shadow: var(--glow-red);
-      animation: mic-pulse 1s infinite
-    }
-
-    @keyframes mic-pulse {
-
-      0%,
-      100% {
-        box-shadow: 0 0 0 0 rgba(248, 113, 113, .5)
-      }
-
-      50% {
-        box-shadow: 0 0 0 18px rgba(248, 113, 113, 0)
-      }
-    }
-
-    .mic-ring {
-      position: absolute;
-      inset: -6px;
-      border-radius: 50%;
-      border: 2px solid rgba(79, 142, 247, .3);
-      animation: ring-expand 2s linear infinite;
-      opacity: 0;
-    }
-
-    .mic-btn.active .mic-ring {
-      border-color: rgba(248, 113, 113, .4);
-      animation: ring-expand 1s linear infinite
-    }
-
-    @keyframes ring-expand {
-      0% {
-        opacity: .5;
-        transform: scale(.95)
-      }
-
-      100% {
-        opacity: 0;
-        transform: scale(1.3)
-      }
-    }
-
-    .mic-info {
-      flex: 1
-    }
-
-    .mic-status {
-      font-size: .85rem;
-      font-weight: 600;
-      color: var(--text)
-    }
-
-    .mic-sub {
-      font-size: .65rem;
-      color: var(--muted2);
-      margin-top: 3px
-    }
-
-    /* Commands quick list */
-    .cmds-section {
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-
-    .cmds-title {
-      font-size: .62rem;
-      text-transform: uppercase;
-      letter-spacing: .8px;
-      color: var(--muted2);
-      font-weight: 600;
-      margin-bottom: 10px
-    }
-
-    .cmd-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px
-    }
-
-    .cmd-chip {
-      padding: 5px 11px;
-      border-radius: 100px;
-      font-size: .65rem;
-      font-weight: 600;
-      cursor: pointer;
-      background: rgba(79, 142, 247, .08);
-      border: 1px solid rgba(79, 142, 247, .18);
-      color: rgba(79, 142, 247, .9);
-      transition: all .2s;
-      white-space: nowrap;
-    }
-
-    .cmd-chip:hover {
-      background: rgba(79, 142, 247, .18);
-      transform: translateY(-1px)
-    }
-
-    /* Detection log */
-    .log-section {
-      flex: 1;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column
-    }
-
-    .log-header {
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
-    }
-
-    .log-title {
-      font-size: .65rem;
-      text-transform: uppercase;
-      letter-spacing: .8px;
-      color: var(--muted2);
-      font-weight: 600
-    }
-
-    .log-clear-btn {
-      background: none;
-      border: none;
-      font-size: .6rem;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 3px 8px;
-      border-radius: 6px;
-      transition: all .2s
-    }
-
-    .log-clear-btn:hover {
-      background: var(--g3);
-      color: var(--text)
-    }
-
-    .log-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 4px 0
-    }
-
-    .log-entry {
-      display: grid;
-      grid-template-columns: 44px 1fr auto;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, .02);
-      transition: background .15s;
-      animation: log-fade .3s ease;
-    }
-
-    @keyframes log-fade {
-      from {
-        opacity: 0;
-        transform: translateX(8px)
-      }
-
-      to {
-        opacity: 1;
-        transform: none
-      }
-    }
-
-    .log-entry:hover {
-      background: rgba(255, 255, 255, .02)
-    }
-
-    .log-time {
-      font-size: .62rem;
-      color: var(--muted2);
-      font-variant-numeric: tabular-nums;
-      font-weight: 500
-    }
-
-    .log-name {
-      font-size: .72rem;
-      font-weight: 600
-    }
-
-    .log-name.info {
-      color: var(--blue)
-    }
-
-    .log-name.warning {
-      color: var(--yellow)
-    }
-
-    .log-name.danger {
-      color: var(--red)
-    }
-
-    .log-badge {
-      font-size: .55rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 100px;
-      text-transform: uppercase;
-      letter-spacing: .4px;
-    }
-
-    .badge-left {
-      background: rgba(167, 139, 250, .12);
-      color: var(--purple)
-    }
-
-    .badge-center {
-      background: rgba(79, 142, 247, .12);
-      color: var(--blue)
-    }
-
-    .badge-right {
-      background: rgba(34, 211, 238, .12);
-      color: var(--cyan)
-    }
-
-    .badge-near {
-      background: rgba(251, 191, 36, .1);
-      color: var(--yellow)
-    }
-
-    .badge-close {
-      background: rgba(248, 113, 113, .12);
-      color: var(--red)
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar {
-      width: 3px
-    }
-
-    ::-webkit-scrollbar-track {
-      background: transparent
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--g4);
-      border-radius: 4px
-    }
-
-    /* ── ALERT TOAST ── */
-    .alert-toast {
-      position: absolute;
-      top: 14px;
-      right: 14px;
-      padding: 10px 16px;
-      border-radius: 10px;
-      font-size: .78rem;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      border: 1px solid;
-      backdrop-filter: blur(12px);
-      animation: toast-in .3s ease;
-      transition: opacity .3s;
-      z-index: 200;
-      max-width: 260px;
-    }
-
-    @keyframes toast-in {
-      from {
-        opacity: 0;
-        transform: translateY(-8px)
-      }
-
-      to {
-        opacity: 1;
-        transform: none
-      }
-    }
-
-    .toast-danger {
-      background: rgba(248, 113, 113, .12);
-      border-color: rgba(248, 113, 113, .3);
-      color: var(--red)
-    }
-
-    .toast-warning {
-      background: rgba(251, 191, 36, .1);
-      border-color: rgba(251, 191, 36, .25);
-      color: var(--yellow)
-    }
-
-    .toast-info {
-      background: rgba(52, 211, 153, .08);
-      border-color: rgba(52, 211, 153, .2);
-      color: var(--green)
-    }
-
-    /* Responsive */
-    @media(max-width:768px) {
-      .layout {
-        grid-template-columns: 1fr;
-        grid-template-rows: 50vh 1fr
-      }
-
-      body {
-        height: auto;
-        overflow: auto
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisionGuide — AI Assistant for Blind Users</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#050810;--g1:#090e1a;--g2:#0e1525;--g3:#141d32;--g4:#1c2a45;
+  --border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.1);
+  --text:#e2e8f0;--muted:#4a5568;--muted2:#718096;
+  --blue:#4f8ef7;--cyan:#22d3ee;--green:#34d399;
+  --yellow:#fbbf24;--red:#f87171;--orange:#fb923c;--purple:#a78bfa;
+  --glow-blue:0 0 30px rgba(79,142,247,.25);
+  --glow-red:0 0 24px rgba(248,113,113,.35);
+  --r:12px;
+}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+header{background:linear-gradient(135deg,rgba(9,14,26,.98),rgba(14,21,37,.98));padding:10px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-icon{width:34px;height:34px;background:linear-gradient(135deg,var(--blue),var(--cyan));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;box-shadow:var(--glow-blue)}
+.brand h1{font-size:.95rem;font-weight:800;letter-spacing:-.3px}
+.brand h1 span{background:linear-gradient(135deg,var(--blue),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.brand-sub{font-size:.58rem;color:var(--muted2);font-weight:500}
+.status-pill{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:100px;font-size:.62rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;border:1px solid}
+.pill-live{background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.2);color:var(--green)}
+.pill-live .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse-dot 1.5s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.pill-idle{background:rgba(74,85,104,.08);border-color:rgba(74,85,104,.2);color:var(--muted2)}
+.pill-idle .dot{width:6px;height:6px;border-radius:50%;background:var(--muted2)}
+
+.layout{display:grid;grid-template-columns:1fr 360px;gap:0;flex:1;overflow:hidden}
+.cam-section{position:relative;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#camFeed{width:100%;height:100%;object-fit:cover;display:block}
+.cam-badge{position:absolute;top:12px;left:12px;background:rgba(5,8,16,.8);backdrop-filter:blur(8px);border:1px solid var(--border2);border-radius:8px;padding:4px 9px;font-size:.58rem;font-weight:600;color:var(--green);display:flex;align-items:center;gap:5px}
+.cam-badge-dot{width:5px;height:5px;border-radius:50%;background:var(--red);animation:pulse-dot 1.2s infinite}
+
+.alert-toast{position:absolute;top:12px;right:12px;padding:8px 14px;border-radius:9px;font-size:.72rem;font-weight:600;display:flex;align-items:center;gap:7px;border:1px solid;backdrop-filter:blur(12px);animation:toast-in .3s ease;z-index:200;max-width:240px}
+@keyframes toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.toast-danger{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3);color:var(--red)}
+.toast-warning{background:rgba(251,191,36,.1);border-color:rgba(251,191,36,.25);color:var(--yellow)}
+.toast-info{background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.2);color:var(--green)}
+
+.zone-bar{position:absolute;bottom:0;left:0;right:0;display:grid;grid-template-columns:1fr 1fr 1fr;background:linear-gradient(transparent,rgba(5,8,16,.9));padding:16px 0 10px}
+.zone{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;font-size:.55rem;font-weight:700;letter-spacing:.7px;text-transform:uppercase;transition:all .3s;border-radius:7px;margin:0 3px}
+.zone.clear{color:rgba(52,211,153,.7)}
+.zone.occupied{color:var(--red);background:rgba(248,113,113,.08);box-shadow:inset 0 0 0 1px rgba(248,113,113,.15)}
+.zone.warning{color:var(--yellow);background:rgba(251,191,36,.07)}
+.zone-arrow{font-size:1rem}
+.zone-label{font-size:.5rem;opacity:.7}
+.zone-dist{font-size:.48rem;color:var(--cyan);opacity:.8}
+
+.right-panel{background:var(--g1);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.output-section{padding:14px 16px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--g2),var(--g1));flex-shrink:0}
+.section-label{font-size:.55rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted2);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.section-label::before,.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+#assistant-output{font-size:.95rem;font-weight:500;line-height:1.5;min-height:50px;padding:10px 12px;background:rgba(0,0,0,.25);border-radius:9px;border:1px solid var(--border2);transition:all .3s;word-break:break-word}
+#assistant-output.flash{color:#fff;border-color:rgba(79,142,247,.4);box-shadow:var(--glow-blue)}
+
+.mic-area{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0}
+.mic-btn{width:50px;height:50px;border-radius:50%;border:none;cursor:pointer;background:linear-gradient(145deg,var(--blue),var(--cyan));color:#fff;font-size:1.2rem;display:flex;align-items:center;justify-content:center;transition:all .2s;box-shadow:var(--glow-blue);flex-shrink:0;position:relative}
+.mic-btn:hover{transform:scale(1.06)}
+.mic-btn.active{background:linear-gradient(145deg,var(--red),var(--orange));box-shadow:var(--glow-red);animation:mic-pulse 1s infinite}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,.5)}50%{box-shadow:0 0 0 16px rgba(248,113,113,0)}}
+.mic-ring{position:absolute;inset:-5px;border-radius:50%;border:2px solid rgba(79,142,247,.3);animation:ring-expand 2s linear infinite;opacity:0}
+.mic-btn.active .mic-ring{border-color:rgba(248,113,113,.4);animation:ring-expand 1s linear infinite}
+@keyframes ring-expand{0%{opacity:.5;transform:scale(.95)}100%{opacity:0;transform:scale(1.3)}}
+.mic-info{flex:1}
+.mic-status{font-size:.78rem;font-weight:600}
+.mic-sub{font-size:.6rem;color:var(--muted2);margin-top:2px}
+
+.cmds-section{padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.cmds-title{font-size:.55rem;text-transform:uppercase;letter-spacing:.7px;color:var(--muted2);font-weight:600;margin-bottom:8px}
+.cmd-chips{display:flex;flex-wrap:wrap;gap:5px}
+.cmd-chip{padding:4px 9px;border-radius:100px;font-size:.58rem;font-weight:600;cursor:pointer;background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.18);color:rgba(79,142,247,.9);transition:all .2s;white-space:nowrap}
+.cmd-chip:hover{background:rgba(79,142,247,.18);transform:translateY(-1px)}
+.cmd-chip.nav{background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.18);color:var(--green)}
+.cmd-chip.nav:hover{background:rgba(52,211,153,.18)}
+.cmd-chip.color{background:rgba(167,139,250,.08);border-color:rgba(167,139,250,.18);color:var(--purple)}
+.cmd-chip.color:hover{background:rgba(167,139,250,.18)}
+
+/* Nav input */
+.nav-section{padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.nav-row{display:flex;gap:6px;margin-top:6px}
+.nav-input{flex:1;background:rgba(0,0,0,.3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:.7rem;font-family:inherit;outline:none}
+.nav-input:focus{border-color:var(--green)}
+.nav-input::placeholder{color:var(--muted)}
+.nav-go{background:linear-gradient(135deg,var(--green),var(--cyan));border:none;border-radius:8px;padding:6px 14px;color:#000;font-weight:700;font-size:.65rem;cursor:pointer;transition:all .2s}
+.nav-go:hover{transform:scale(1.05)}
+
+.log-section{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.log-header{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.log-title{font-size:.58rem;text-transform:uppercase;letter-spacing:.7px;color:var(--muted2);font-weight:600}
+.log-clear-btn{background:none;border:none;font-size:.55rem;color:var(--muted);cursor:pointer;padding:2px 7px;border-radius:5px;transition:all .2s}
+.log-clear-btn:hover{background:var(--g3);color:var(--text)}
+.log-body{flex:1;overflow-y:auto;padding:3px 0}
+.log-entry{display:grid;grid-template-columns:42px 1fr auto auto;align-items:center;gap:6px;padding:5px 16px;border-bottom:1px solid rgba(255,255,255,.02);animation:log-fade .3s ease}
+@keyframes log-fade{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
+.log-time{font-size:.58rem;color:var(--muted2);font-variant-numeric:tabular-nums;font-weight:500}
+.log-name{font-size:.66rem;font-weight:600}
+.log-name.info{color:var(--blue)}.log-name.warning{color:var(--yellow)}.log-name.danger{color:var(--red)}
+.log-badge{font-size:.5rem;font-weight:700;padding:2px 6px;border-radius:100px;text-transform:uppercase;letter-spacing:.3px}
+.badge-close{background:rgba(248,113,113,.12);color:var(--red)}
+.badge-near{background:rgba(251,191,36,.1);color:var(--yellow)}
+.badge-center{background:rgba(79,142,247,.12);color:var(--blue)}
+.color-dot{width:10px;height:10px;border-radius:50%;border:1px solid rgba(255,255,255,.2);flex-shrink:0}
+
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--g4);border-radius:4px}
+@media(max-width:768px){.layout{grid-template-columns:1fr;grid-template-rows:45vh 1fr}body{height:auto;overflow:auto}}
+</style>
 </head>
-
 <body>
 
-  <!-- HEADER -->
-  <header>
-    <div class="brand">
-      <div class="brand-icon">👁️</div>
-      <div>
-        <h1>Vision<span>Guide</span></h1>
-        <div class="brand-sub">AI Assistant for Blind Users</div>
-      </div>
+<header>
+  <div class="brand">
+    <div class="brand-icon">👁️</div>
+    <div>
+      <h1>Vision<span>Guide</span></h1>
+      <div class="brand-sub">AI Assistant for Blind Users</div>
     </div>
-    <div class="header-right">
-      <div class="status-pill pill-live" id="statusPill">
-        <div class="dot"></div>
-        <span id="statusText">Camera Active</span>
-      </div>
-    </div>
-  </header>
+  </div>
+  <div class="status-pill pill-live" id="statusPill">
+    <div class="dot"></div>
+    <span id="statusText">Camera Active</span>
+  </div>
+</header>
 
-  <!-- MAIN LAYOUT -->
-  <div class="layout">
-
-    <!-- CAMERA SECTION -->
-    <div class="cam-section" id="camSection">
-      <img id="camFeed" src="/api/video_feed" alt="Live camera feed">
-
-      <!-- Camera badge -->
-      <div class="cam-badge">
-        <div class="cam-badge-dot"></div>
-        LIVE · YOLOv8 + MediaPipe
-      </div>
-
-      <!-- Alert toast (dynamically placed) -->
-      <div class="alert-toast toast-info" id="alertToast" style="display:none">
-        <span id="alertIcon">ℹ️</span>
-        <span id="alertText"></span>
-      </div>
-
-      <!-- Zone bar -->
-      <div class="zone-bar">
-        <div class="zone clear" id="zoneLeft">
-          <div class="zone-arrow">←</div>
-          <div>LEFT</div>
-          <div class="zone-label" id="lblLeft">clear</div>
-        </div>
-        <div class="zone clear" id="zoneCenter">
-          <div class="zone-arrow">↑</div>
-          <div>CENTER</div>
-          <div class="zone-label" id="lblCenter">clear</div>
-        </div>
-        <div class="zone clear" id="zoneRight">
-          <div class="zone-arrow">→</div>
-          <div>RIGHT</div>
-          <div class="zone-label" id="lblRight">clear</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT PANEL -->
-    <div class="right-panel">
-
-      <!-- Output -->
-      <div class="output-section">
-        <div class="section-label">🔊 Assistant Output</div>
-        <div id="assistant-output">Camera is starting… speak a command when ready.</div>
-      </div>
-
-      <!-- Mic -->
-      <div class="mic-area">
-        <button class="mic-btn" id="micBtn" onclick="toggleMic()" aria-label="Click to speak">
-          <div class="mic-ring"></div>
-          🎤
-        </button>
-        <div class="mic-info">
-          <div class="mic-status" id="micStatus">Tap to speak</div>
-          <div class="mic-sub" id="micSub">Always listening via browser mic</div>
-        </div>
-      </div>
-
-      <!-- Quick commands -->
-      <div class="cmds-section">
-        <div class="cmds-title">Quick Commands</div>
-        <div class="cmd-chips">
-          <div class="cmd-chip" onclick="sendTextCmd('what is in my hand')">✋ What's in my hand</div>
-          <div class="cmd-chip" onclick="sendTextCmd('what is in front of me')">👁 What's in front</div>
-          <div class="cmd-chip" onclick="sendTextCmd('can i move forward')">🚶 Can I move forward</div>
-          <div class="cmd-chip" onclick="sendTextCmd('what is the person holding')">🧑 Person holding</div>
-          <div class="cmd-chip" onclick="sendTextCmd('open youtube')">▶️ YouTube</div>
-          <div class="cmd-chip" onclick="sendTextCmd('open chrome')">🌐 Chrome</div>
-        </div>
-      </div>
-
-      <!-- Detection log -->
-      <div class="log-section">
-        <div class="log-header">
-          <div class="log-title">📋 Live Detections</div>
-          <button class="log-clear-btn" onclick="clearLog()">Clear</button>
-        </div>
-        <div class="log-body" id="logBody">
-          <div class="log-entry">
-            <span class="log-time">--:--</span>
-            <span class="log-name info">Waiting for detections…</span>
-            <span class="log-badge badge-center">—</span>
-          </div>
-        </div>
-      </div>
-
+<div class="layout">
+  <div class="cam-section">
+    <img id="camFeed" src="/api/video_feed" alt="Live camera feed">
+    <div class="cam-badge"><div class="cam-badge-dot"></div>LIVE · YOLOv8 + MediaPipe + Gemini</div>
+    <div class="alert-toast toast-info" id="alertToast" style="display:none"><span id="alertIcon">ℹ️</span><span id="alertText"></span></div>
+    <div class="zone-bar">
+      <div class="zone clear" id="zoneLeft"><div class="zone-arrow">←</div><div>LEFT</div><div class="zone-label" id="lblLeft">clear</div><div class="zone-dist" id="distLeft"></div></div>
+      <div class="zone clear" id="zoneCenter"><div class="zone-arrow">↑</div><div>CENTER</div><div class="zone-label" id="lblCenter">clear</div><div class="zone-dist" id="distCenter"></div></div>
+      <div class="zone clear" id="zoneRight"><div class="zone-arrow">→</div><div>RIGHT</div><div class="zone-label" id="lblRight">clear</div><div class="zone-dist" id="distRight"></div></div>
     </div>
   </div>
 
-  <script>
-    // ══════════════════════════════════════════════
-    // STATE
-    // ══════════════════════════════════════════════
-    let isRecording = false;
-    let recognition = null;
-    let alertTimer = null;
-    let lastLogLen = 0;
+  <div class="right-panel">
+    <div class="output-section">
+      <div class="section-label">🔊 Assistant Output</div>
+      <div id="assistant-output">Camera starting… speak a command when ready.</div>
+    </div>
 
-    // ══════════════════════════════════════════════
-    // INIT — camera starts automatically on backend
-    // ══════════════════════════════════════════════
-    window.addEventListener('DOMContentLoaded', () => {
-      pollDetections();
-      setInterval(pollDetections, 1200);
-      setInterval(syncStatus, 4000);
-    });
+    <div class="mic-area">
+      <button class="mic-btn" id="micBtn" onclick="toggleMic()"><div class="mic-ring"></div>🎤</button>
+      <div class="mic-info">
+        <div class="mic-status" id="micStatus">Tap to speak</div>
+        <div class="mic-sub" id="micSub">Click mic then speak a command</div>
+      </div>
+    </div>
 
-    // ══════════════════════════════════════════════
-    // OUTPUT
-    // ══════════════════════════════════════════════
-    function setOutput(text) {
-      const el = document.getElementById('assistant-output');
-      el.textContent = text;
-      el.classList.add('flash');
-      setTimeout(() => el.classList.remove('flash'), 2500);
+    <div class="cmds-section">
+      <div class="cmds-title">Quick Commands</div>
+      <div class="cmd-chips">
+        <div class="cmd-chip" onclick="sendTextCmd('what is in my hand')">✋ In my hand</div>
+        <div class="cmd-chip" onclick="sendTextCmd('what is in front of me')">👁 In front</div>
+        <div class="cmd-chip" onclick="sendTextCmd('can i move forward')">🚶 Path clear?</div>
+        <div class="cmd-chip color" onclick="sendTextCmd('what color is the object')">🎨 Color?</div>
+        <div class="cmd-chip color" onclick="sendTextCmd('what am i wearing')">👕 Wearing?</div>
+        <div class="cmd-chip" onclick="sendTextCmd('how far is the object')">📏 Distance?</div>
+        <div class="cmd-chip" onclick="sendTextCmd('describe the scene')">🔍 Full scene</div>
+        <div class="cmd-chip nav" onclick="sendTextCmd('next step')">➡️ Next step</div>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="cmds-title">🗺️ Navigation</div>
+      <div class="nav-row">
+        <input class="nav-input" id="navFrom" placeholder="From (e.g. Agra)">
+        <input class="nav-input" id="navTo" placeholder="To (e.g. Mathura)">
+        <button class="nav-go" onclick="startNav()">GO</button>
+      </div>
+    </div>
+
+    <div class="log-section">
+      <div class="log-header">
+        <div class="log-title">📋 Live Detections</div>
+        <button class="log-clear-btn" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="log-body" id="logBody">
+        <div class="log-entry">
+          <span class="log-time">--:--</span>
+          <span class="log-name info">Waiting for detections…</span>
+          <span class="log-badge badge-center">—</span>
+          <span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let alertTimer=null, lastLogLen=0;
+
+window.addEventListener('DOMContentLoaded',()=>{
+  pollDetections();
+  setInterval(pollDetections,1200);
+  setInterval(syncStatus,4000);
+});
+
+function setOutput(t){const e=document.getElementById('assistant-output');e.textContent=t;e.classList.add('flash');setTimeout(()=>e.classList.remove('flash'),2500)}
+function showToast(t,type='info'){const toast=document.getElementById('alertToast'),icon=document.getElementById('alertIcon'),msg=document.getElementById('alertText');toast.className=`alert-toast toast-${type}`;icon.textContent=type==='danger'?'🚨':type==='warning'?'⚠️':'ℹ️';msg.textContent=t;toast.style.display='flex';clearTimeout(alertTimer);alertTimer=setTimeout(()=>{toast.style.display='none'},5000)}
+
+async function sendTextCmd(cmd){
+  setOutput(`You: "${cmd}"`);
+  try{
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:cmd})});
+    const data=await res.json();
+    if(data.response&&data.action!=='ignore') setOutput(data.response);
+  }catch(e){setOutput('Connection error.')}
+}
+
+async function startNav(){
+  const f=document.getElementById('navFrom').value.trim();
+  const t=document.getElementById('navTo').value.trim();
+  if(!f||!t){setOutput('Enter both From and To locations');return}
+  await sendTextCmd(`navigate from ${f} to ${t}`);
+}
+
+// ═══ VOICE RECOGNITION ═══
+let recog=null,recogRunning=false,recogEnabled=false,recogRestart=null,lastSentCmd='',lastSentTime=0;
+
+function startRecog(){
+  if(!recogEnabled||recogRunning)return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR)return;
+  recog=new SR();recog.lang='en-IN';recog.continuous=false;recog.interimResults=true;recog.maxAlternatives=3;
+  recog.onstart=()=>{recogRunning=true;setMicUI(true,'Listening…','Speak a command clearly')};
+  recog.onspeechstart=()=>{document.getElementById('micSub').textContent='Hearing you…'};
+  recog.onresult=async(e)=>{
+    let interim='',final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal){final=e.results[i][0].transcript.toLowerCase().trim()}
+      else{interim=e.results[i][0].transcript}
     }
-
-    function showToast(text, type = 'info') {
-      const toast = document.getElementById('alertToast');
-      const icon = document.getElementById('alertIcon');
-      const msg = document.getElementById('alertText');
-      toast.className = `alert-toast toast-${type}`;
-      icon.textContent = type === 'danger' ? '🚨' : type === 'warning' ? '⚠️' : 'ℹ️';
-      msg.textContent = text;
-      toast.style.display = 'flex';
-      clearTimeout(alertTimer);
-      alertTimer = setTimeout(() => { toast.style.display = 'none'; }, 5000);
+    if(interim)document.getElementById('micSub').textContent=`"${interim}"`;
+    if(final){
+      const now=Date.now();
+      if(final===lastSentCmd&&now-lastSentTime<3000)return;
+      lastSentCmd=final;lastSentTime=now;
+      document.getElementById('micSub').textContent=`Heard: "${final}"`;
+      await sendTextCmd(final);
     }
+  };
+  recog.onerror=(e)=>{
+    recogRunning=false;
+    const msg={'no-speech':'No speech — listening again…','audio-capture':'❌ Mic not found','not-allowed':'❌ Mic blocked','network':'❌ Network error','aborted':'Stopped.'}[e.error]||`Error: ${e.error}`;
+    document.getElementById('micSub').textContent=msg;
+    if(['audio-capture','not-allowed','service-not-allowed'].includes(e.error)){recogEnabled=false;setMicUI(false,'Tap to speak',msg);return}
+    if(recogEnabled)scheduleRestart(800);
+  };
+  recog.onend=()=>{recogRunning=false;if(recogEnabled)scheduleRestart(300);else setMicUI(false,'Tap to speak','Microphone off')};
+  try{recog.start()}catch(e){recogRunning=false;scheduleRestart(1000)}
+}
+function scheduleRestart(ms){clearTimeout(recogRestart);recogRestart=setTimeout(startRecog,ms)}
+function stopRecog(){clearTimeout(recogRestart);recogEnabled=false;recogRunning=false;if(recog){try{recog.abort()}catch(e){}recog=null}setMicUI(false,'Tap to speak','Microphone off')}
+function setMicUI(a,s,sub){const b=document.getElementById('micBtn');if(a){b.classList.add('active');b.innerHTML='<div class="mic-ring"></div>🔴'}else{b.classList.remove('active');b.innerHTML='<div class="mic-ring"></div>🎤'}document.getElementById('micStatus').textContent=s;document.getElementById('micSub').textContent=sub}
+function toggleMic(){if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){setOutput('❌ Use Chrome browser');return}if(recogEnabled)stopRecog();else{recogEnabled=true;startRecog()}}
 
-    // ══════════════════════════════════════════════
-    // SEND COMMAND (text or voice)
-    // ══════════════════════════════════════════════
-    async function sendTextCmd(cmd) {
-      setOutput(`You: "${cmd}"`);
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: cmd })
-        });
-        const data = await res.json();
-        if (data.response && data.action !== 'ignore') {
-          setOutput(data.response);
-        }
-      } catch (e) { setOutput('Connection error.'); }
+// ═══ COLOR MAP ═══
+const CSS_COLORS={red:'#ef4444',orange:'#f97316',yellow:'#eab308',green:'#22c55e',blue:'#3b82f6',purple:'#a855f7',pink:'#ec4899',black:'#1a1a2e',white:'#f1f5f9',gray:'#6b7280',unknown:'transparent'};
+
+// ═══ ZONES ═══
+function updateZones(dets){
+  const zones={left:[],center:[],right:[]};
+  dets.forEach(d=>{if(zones[d.zone])zones[d.zone].push(d)});
+  ['left','center','right'].forEach(z=>{
+    const el=document.getElementById('zone'+z.charAt(0).toUpperCase()+z.slice(1));
+    const lbl=document.getElementById('lbl'+z.charAt(0).toUpperCase()+z.slice(1));
+    const dist=document.getElementById('dist'+z.charAt(0).toUpperCase()+z.slice(1));
+    const items=zones[z];
+    if(!items.length){el.className='zone clear';lbl.textContent='clear';dist.textContent=''}
+    else{
+      const hasClose=items.some(d=>d.distance==='very close'||d.distance==='near');
+      el.className='zone '+(hasClose?'occupied':'warning');
+      lbl.textContent=items.map(d=>d.class).slice(0,2).join(', ');
+      const nearest=items.reduce((a,b)=>(a.distance_m||99)<(b.distance_m||99)?a:b);
+      dist.textContent=nearest.distance_m?nearest.distance_m+'m':'';
     }
+  });
+}
 
-
-    // ══════════════════════════════════════════════
-    // MIC (Web Speech API)
-    // ══════════════════════════════════════════════
-    // ══════════════════════════════════════════════
-    // VOICE RECOGNITION — CONTINUOUS ALWAYS-ON
-    // ══════════════════════════════════════════════
-    let recog = null;
-    let recogRunning = false;
-    let recogEnabled = false;   // toggled by user
-    let recogRestart = null;
-    let lastSentCmd = '';
-    let lastSentTime = 0;
-
-    const COMMANDS = [
-      'what is in my hand',
-      'what am i holding',
-      'what is in front of me',
-      'what can you see',
-      'can i move forward',
-      'is the path clear',
-      'what is the person holding',
-      'open youtube',
-      'open chrome',
-      'open google',
-      'open instagram',
-      'open whatsapp',
-      'what time is it',
-    ];
-
-    function matchCommand(text) {
-      const t = text.toLowerCase().trim();
-      // Exact partial match
-      for (const cmd of COMMANDS) {
-        if (t.includes(cmd)) return t;
-      }
-      // "open X" catch-all
-      if (t.includes('open ')) return t;
-      // Date/time
-      if (t.includes('time') || t.includes('date')) return t;
-      return null;
+// ═══ DETECTION LOG ═══
+function distClass(d){return d==='very close'?'badge-close':d==='near'?'badge-near':'badge-center'}
+async function pollDetections(){
+  try{
+    const res=await fetch('/api/detections');const data=await res.json();
+    if(data.detections)updateZones(data.detections);
+    if(data.log&&data.log.length>0&&data.log.length!==lastLogLen){
+      lastLogLen=data.log.length;
+      const body=document.getElementById('logBody');body.innerHTML='';
+      data.log.slice().reverse().forEach(e=>{
+        const row=document.createElement('div');row.className='log-entry';
+        row.innerHTML=`<span class="log-time">${e.time}</span><span class="log-name ${e.level}">${e.object}</span><span class="log-badge ${distClass(e.distance)}">${e.distance}</span><span></span>`;
+        body.appendChild(row);
+      });
+      const latest=data.log[data.log.length-1];
+      if(latest.level==='danger')showToast(`${latest.object} very close — ${latest.zone}!`,'danger');
     }
-
-    function startRecog() {
-      if (!recogEnabled || recogRunning) return;
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) return;
-
-      recog = new SR();
-      recog.lang = 'en-IN';
-      recog.continuous = false;          // one phrase at a time
-      recog.interimResults = true;       // show partial results
-      recog.maxAlternatives = 3;
-
-      recog.onstart = () => {
-        recogRunning = true;
-        setMicUI(true, 'Listening…', 'Speak a command clearly');
-      };
-
-      recog.onspeechstart = () => {
-        document.getElementById('micSub').textContent = 'Hearing you…';
-      };
-
-      recog.onresult = async (e) => {
-        let interim = '';
-        let final = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) {
-            // pick best alternative that matches a command
-            for (let j = 0; j < e.results[i].length; j++) {
-              const t = e.results[i][j].transcript.toLowerCase().trim();
-              if (matchCommand(t)) { final = t; break; }
-            }
-            if (!final) final = e.results[i][0].transcript.toLowerCase().trim();
-          } else {
-            interim = e.results[i][0].transcript;
-          }
-        }
-
-        if (interim) {
-          document.getElementById('micSub').textContent = `"${interim}"`;
-        }
-
-        if (final) {
-          const now = Date.now();
-          if (final === lastSentCmd && now - lastSentTime < 3000) return; // dedup
-          lastSentCmd = final;
-          lastSentTime = now;
-          document.getElementById('micSub').textContent = `Heard: "${final}"`;
-          await sendTextCmd(final);
-        }
-      };
-
-      recog.onerror = (e) => {
-        recogRunning = false;
-        const msg = {
-          'no-speech': 'No speech — listening again…',
-          'audio-capture': '❌ Mic not found. Check permissions.',
-          'not-allowed': '❌ Mic blocked. Allow mic in browser.',
-          'network': '❌ Network error. Check internet.',
-          'aborted': 'Stopped.',
-          'service-not-allowed': '❌ Speech service blocked.',
-        }[e.error] || `Error: ${e.error}`;
-
-        document.getElementById('micSub').textContent = msg;
-
-        if (['audio-capture', 'not-allowed', 'service-not-allowed'].includes(e.error)) {
-          recogEnabled = false;
-          setMicUI(false, 'Tap to speak', msg);
-          return;
-        }
-        // Auto-restart for recoverable errors
-        if (recogEnabled) scheduleRestart(800);
-      };
-
-      recog.onend = () => {
-        recogRunning = false;
-        if (recogEnabled) scheduleRestart(300);
-        else setMicUI(false, 'Tap to speak', 'Microphone off');
-      };
-
-      try {
-        recog.start();
-      } catch (e) {
-        recogRunning = false;
-        scheduleRestart(1000);
-      }
-    }
-
-    function scheduleRestart(ms) {
-      clearTimeout(recogRestart);
-      recogRestart = setTimeout(startRecog, ms);
-    }
-
-    function stopRecog() {
-      clearTimeout(recogRestart);
-      recogEnabled = false;
-      recogRunning = false;
-      if (recog) { try { recog.abort(); } catch (e) { } recog = null; }
-      setMicUI(false, 'Tap to speak', 'Microphone off');
-    }
-
-    function setMicUI(active, status, sub) {
-      const btn = document.getElementById('micBtn');
-      const st = document.getElementById('micStatus');
-      const sb = document.getElementById('micSub');
-      if (active) {
-        btn.classList.add('active');
-        btn.innerHTML = '<div class="mic-ring"></div>🔴';
-      } else {
-        btn.classList.remove('active');
-        btn.innerHTML = '<div class="mic-ring"></div>🎤';
-      }
-      if (status) st.textContent = status;
-      if (sub) sb.textContent = sub;
-    }
-
-    function toggleMic() {
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        setOutput('❌ Use Chrome or Edge — speech recognition not supported in this browser.');
-        document.getElementById('micSub').textContent = 'Switch to Chrome browser';
-        return;
-      }
-      if (recogEnabled) {
-        stopRecog();
-      } else {
-        recogEnabled = true;
-        startRecog();
-      }
-    }
-
-    // Alias for back-compat
-    function stopMic() { stopRecog(); }
-
-
-
-    // ══════════════════════════════════════════════
-    // DIRECTION ZONES
-    // ══════════════════════════════════════════════
-    function updateZones(detections) {
-      const zones = { left: [], center: [], right: [] };
-      detections.forEach(d => { if (zones[d.zone]) zones[d.zone].push(d); });
-
-      ['left', 'center', 'right'].forEach(z => {
-        const el = document.getElementById('zone' + z.charAt(0).toUpperCase() + z.slice(1));
-        const lbl = document.getElementById('lbl' + z.charAt(0).toUpperCase() + z.slice(1));
-        const items = zones[z];
-        if (items.length === 0) {
-          el.className = 'zone clear';
-          lbl.textContent = 'clear';
-        } else {
-          const hasClose = items.some(d => d.distance === 'very close' || d.distance === 'near');
-          el.className = 'zone ' + (hasClose ? 'occupied' : 'warning');
-          lbl.textContent = items.map(d => d.class).slice(0, 2).join(', ');
-        }
+    // Update log with current detections if available (richer data)
+    if(data.detections&&data.detections.length>0){
+      const body=document.getElementById('logBody');body.innerHTML='';
+      data.detections.forEach(d=>{
+        const row=document.createElement('div');row.className='log-entry';
+        const c=CSS_COLORS[d.color]||'transparent';
+        const dm=d.distance_m?d.distance_m+'m':'';
+        row.innerHTML=`<span class="log-time">${dm}</span><span class="log-name ${d.distance==='very close'?'danger':d.distance==='near'?'warning':'info'}">${d.color!=='unknown'?d.color+' ':''}${d.class}</span><span class="log-badge ${distClass(d.distance)}">${d.zone}</span><div class="color-dot" style="background:${c}"></div>`;
+        body.appendChild(row);
       });
     }
+  }catch(e){}
+}
+function clearLog(){document.getElementById('logBody').innerHTML='';lastLogLen=0}
 
-    // ══════════════════════════════════════════════
-    // DETECTION LOG POLLING
-    // ══════════════════════════════════════════════
-    function badgeClass(zone) {
-      return { left: 'badge-left', center: 'badge-center', right: 'badge-right' }[zone] || 'badge-center';
-    }
-    function distClass(dist) {
-      if (dist === 'very close') return 'badge-close';
-      if (dist === 'near') return 'badge-near';
-      return 'badge-center';
-    }
-
-    async function pollDetections() {
-      try {
-        const res = await fetch('/api/detections');
-        const data = await res.json();
-
-        if (data.detections) updateZones(data.detections);
-
-        if (data.log && data.log.length > 0 && data.log.length !== lastLogLen) {
-          lastLogLen = data.log.length;
-          const body = document.getElementById('logBody');
-          body.innerHTML = '';
-          data.log.slice().reverse().forEach(e => {
-            const row = document.createElement('div');
-            row.className = 'log-entry';
-            row.innerHTML =
-              `<span class="log-time">${e.time}</span>` +
-              `<span class="log-name ${e.level}">${e.object}</span>` +
-              `<span class="log-badge ${distClass(e.distance)}">${e.distance}</span>`;
-            body.appendChild(row);
-          });
-
-          // Toast for danger
-          const latest = data.log[data.log.length - 1];
-          if (latest.level === 'danger') {
-            showToast(`${latest.object} very close — ${latest.zone}!`, 'danger');
-          }
-        }
-      } catch (e) { }
-    }
-
-    function clearLog() {
-      document.getElementById('logBody').innerHTML = '';
-      lastLogLen = 0;
-    }
-
-    // ══════════════════════════════════════════════
-    // STATUS SYNC
-    // ══════════════════════════════════════════════
-    async function syncStatus() {
-      try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        const pill = document.getElementById('statusPill');
-        const txt = document.getElementById('statusText');
-        if (data.camera_running) {
-          pill.className = 'status-pill pill-live';
-          txt.textContent = 'Camera Active';
-        } else {
-          pill.className = 'status-pill pill-idle';
-          txt.textContent = 'Camera Offline';
-        }
-      } catch (e) { }
-    }
-  </script>
+// ═══ STATUS ═══
+async function syncStatus(){
+  try{
+    const res=await fetch('/api/status');const data=await res.json();
+    const pill=document.getElementById('statusPill'),txt=document.getElementById('statusText');
+    if(data.camera_running){pill.className='status-pill pill-live';txt.textContent='Camera Active'}
+    else{pill.className='status-pill pill-idle';txt.textContent='Camera Offline'}
+  }catch(e){}
+}
+</script>
 </body>
-
 </html>

@@ -183,6 +183,8 @@ def get_detections():
             "class": d["class"],
             "zone": d["zone"],
             "distance": d["distance"],
+            "distance_m": d.get("distance_m", ""),
+            "color": d.get("color", "unknown"),
             "confidence": round(d["confidence"], 2),
             "area_ratio": round(d.get("area_ratio", 0), 4),
         })

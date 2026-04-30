@@ -1,8 +1,7 @@
 # ==========================================
-# Real-Time AI Voice Assistant for Blind Users
+# VisionGuide — Real-Time AI Voice Assistant
 # ==========================================
-# Install all dependencies:
-#   pip install -r requirements.txt
+# Install: pip install -r requirements.txt
 # ==========================================
 
 # --- Core Speech ---
@@ -19,8 +18,9 @@ flask-cors>=4.0.0             # Cross-origin support
 # --- Computer Vision ---
 opencv-python>=4.8.0          # Webcam capture & image processing
 ultralytics>=8.0.0            # YOLOv8 object detection
+numpy>=1.24.0                 # Array processing (color detection)
 
-# --- AI Image Analysis (optional, uses Gemini) ---
+# --- AI Image Analysis (Gemini) ---
 google-generativeai>=0.4.0    # Google Gemini API
 Pillow>=10.0.0                # Image handling
 

@@ -1,5 +1,10 @@
 """
 Voice Assistant — Command Processing & Voice I/O
+==================================================
+Handles all voice commands: vision queries, color identification,
+distance estimation, navigation directions, app/website opening.
+
+Author : Arpit
 """
 
 import speech_recognition as sr
@@ -12,6 +17,9 @@ import time
 import re
 import threading
 import queue
+import json
+import urllib.request
+import urllib.parse
 
 # ──────────────────────────────────────────────
 # TTS ENGINE
@@ -155,6 +163,81 @@ def _try_open_website(command):
 
 
 # ──────────────────────────────────────────────
+# GOOGLE MAPS NAVIGATION
+# ──────────────────────────────────────────────
+def get_navigation_directions(origin, destination):
+    """Get directions using Google Maps Directions API."""
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    if not api_key:
+        # Fallback: open Google Maps in browser
+        url = f"https://www.google.com/maps/dir/{urllib.parse.quote(origin)}/{urllib.parse.quote(destination)}"
+        webbrowser.open(url)
+        return f"Opening Google Maps for directions from {origin} to {destination}"
+
+    try:
+        base = "https://maps.googleapis.com/maps/api/directions/json"
+        params = urllib.parse.urlencode({
+            "origin": origin,
+            "destination": destination,
+            "mode": "walking",
+            "language": "en",
+            "key": api_key,
+        })
+        url = f"{base}?{params}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+
+        if data.get("status") != "OK" or not data.get("routes"):
+            return f"Could not find route from {origin} to {destination}"
+
+        route = data["routes"][0]
+        leg = route["legs"][0]
+        total_dist = leg["distance"]["text"]
+        total_dur = leg["duration"]["text"]
+
+        # Build step-by-step voice directions
+        steps = []
+        for i, step in enumerate(leg["steps"][:10], 1):
+            instruction = re.sub(r'<[^>]+>', '', step["html_instructions"])
+            dist = step["distance"]["text"]
+            steps.append(f"Step {i}: {instruction}, {dist}")
+
+        summary = f"Route from {origin} to {destination}: {total_dist}, about {total_dur}. "
+        summary += " ".join(steps[:5])
+
+        # Cache for later step-by-step guidance
+        _nav_state["steps"] = steps
+        _nav_state["current"] = 0
+        _nav_state["summary"] = summary
+        _nav_state["active"] = True
+
+        return summary
+
+    except Exception as e:
+        # Fallback: open in browser
+        url = f"https://www.google.com/maps/dir/{urllib.parse.quote(origin)}/{urllib.parse.quote(destination)}"
+        webbrowser.open(url)
+        return f"Opening Google Maps for directions from {origin} to {destination}"
+
+
+# Navigation state
+_nav_state = {"steps": [], "current": 0, "summary": "", "active": False}
+
+def get_next_nav_step():
+    """Get the next navigation step."""
+    if not _nav_state["active"] or not _nav_state["steps"]:
+        return "No active navigation. Tell me where you want to go."
+    idx = _nav_state["current"]
+    if idx >= len(_nav_state["steps"]):
+        _nav_state["active"] = False
+        return "You have reached your destination"
+    step = _nav_state["steps"][idx]
+    _nav_state["current"] = idx + 1
+    return step
+
+
+# ──────────────────────────────────────────────
 # MODE MANAGER
 # ──────────────────────────────────────────────
 class ModeManager:
@@ -166,31 +249,105 @@ class ModeManager:
 
     @property
     def mode(self):
-        # Always "active" — camera always on
         return "active"
 
 mode_manager = ModeManager()
 
 
 # ──────────────────────────────────────────────
-# COMMAND ROUTING — STRICT
+# COMMAND ROUTING — COMPREHENSIVE
 # ──────────────────────────────────────────────
+def _extract_nav_locations(command):
+    """Extract origin and destination from navigation commands."""
+    patterns = [
+        r'(?:navigate|go|take me|directions?)\s+(?:from\s+)?(.+?)\s+(?:to|se)\s+(.+)',
+        r'(?:mujhe|mujhae|i want to go)\s+(.+?)\s+(?:to|se|tak)\s+(.+?)(?:\s+jaana|\s+jana)?',
+        r'(.+?)\s+(?:to|se)\s+(.+?)(?:\s+(?:jaana|jana|route|direction))',
+    ]
+    for pat in patterns:
+        m = re.search(pat, command, re.IGNORECASE)
+        if m:
+            return m.group(1).strip(), m.group(2).strip()
+    return None, None
+
+
 def _route(command):
     """Returns response string or None if silent."""
     vs = mode_manager._vision_system
 
-    # ── VISION QUERIES ──
-    if any(p in command for p in ["what is in my hand", "what am i holding", "what's in my hand"]):
+    # ── VISION: HAND QUERIES ──
+    if any(p in command for p in ["what is in my hand", "what am i holding", "what's in my hand",
+                                   "mere haath mein kya hai"]):
         return vs.query_hand() if vs else "Camera not ready"
 
-    if any(p in command for p in ["what is in front of me", "what's in front of me", "what can you see"]):
+    # ── VISION: FRONT QUERIES ──
+    if any(p in command for p in ["what is in front of me", "what's in front of me",
+                                   "what can you see", "mere saamne kya hai"]):
         return vs.query_front() if vs else "Camera not ready"
 
-    if any(p in command for p in ["what is the person holding", "what is the man holding", "what is the woman holding"]):
+    # ── VISION: PERSON HOLDING ──
+    if any(p in command for p in ["what is the person holding", "what is the man holding",
+                                   "what is the woman holding"]):
         return vs.query_person_holding() if vs else "Camera not ready"
 
-    if any(p in command for p in ["can i move forward", "is the path clear", "is path clear"]):
+    # ── VISION: PATH CHECK ──
+    if any(p in command for p in ["can i move forward", "is the path clear", "is path clear",
+                                   "can i go", "kya rasta saaf hai"]):
         return vs.query_path() if vs else "Camera not ready"
+
+    # ── COLOR QUERIES ──
+    if any(p in command for p in ["what color", "what colour", "which color", "which colour",
+                                   "konsa colour", "kis colour", "color of", "colour of"]):
+        # Extract target: "what color is the bottle" → "bottle"
+        target = None
+        for w in ["color is the", "colour is the", "color of the", "colour of the",
+                   "color is", "colour is", "color of", "colour of",
+                   "colour ka", "color ka"]:
+            if w in command:
+                target = command.split(w)[-1].strip()
+                break
+        return vs.query_color(target) if vs else "Camera not ready"
+
+    # ── WEARING COLOR ──
+    if any(p in command for p in ["what am i wearing", "what color am i wearing",
+                                   "kya pehna hai", "konsa colour pehna"]):
+        if vs:
+            return vs.query_color("clothing")
+        return "Camera not ready"
+
+    # ── DISTANCE QUERIES ──
+    if any(p in command for p in ["how far", "kitni door", "kitni duri", "what is the distance",
+                                   "distance of", "how close"]):
+        target = None
+        for w in ["how far is the", "how far is", "distance of the", "distance of",
+                   "how close is the", "how close is"]:
+            if w in command:
+                target = command.split(w)[-1].strip()
+                break
+        return vs.query_distance(target) if vs else "Camera not ready"
+
+    # ── DETAILED SCENE ──
+    if any(p in command for p in ["describe", "tell me everything", "what do you see",
+                                   "full scene", "identify everything", "scan"]):
+        return vs.query_scene_detailed() if vs else "Camera not ready"
+
+    # ── NAVIGATION: Step-by-step ──
+    if any(p in command for p in ["next step", "next direction", "agla step", "aage kya"]):
+        return get_next_nav_step()
+
+    # ── NAVIGATION: Route request ──
+    if any(p in command for p in ["navigate", "direction", "route", "go from", "go to",
+                                   "take me", "mujhe", "mujhae", "jaana"]):
+        origin, dest = _extract_nav_locations(command)
+        if origin and dest:
+            return get_navigation_directions(origin, dest)
+        # Simple "navigate to X"
+        for w in ["navigate to", "go to", "take me to", "directions to"]:
+            if w in command:
+                dest = command.split(w)[-1].strip()
+                if dest:
+                    return get_navigation_directions("my location", dest)
+        return "Please say: navigate from [place] to [place]"
 
     # ── OPEN APP / WEBSITE ──
     if "open" in command:
@@ -212,7 +369,7 @@ def _route(command):
     if any(w in command for w in ["date", "today", "what day"]):
         return f"Today is {datetime.datetime.now().strftime('%A, %B %d')}"
 
-    return None  # Silent for unrecognised commands
+    return None
 
 
 def process_command(command):
@@ -220,7 +377,7 @@ def process_command(command):
     response = _route(command)
     if response:
         speak(response)
-    return True  # Keep running
+    return True
 
 
 def process_command_web(command):

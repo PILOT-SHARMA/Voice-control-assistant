@@ -1,16 +1,16 @@
 """
 Vision System — Real-Time Object Detection for Blind Users
 ===========================================================
-Uses YOLOv8 (ultralytics) with webcam to detect objects,
-estimate position (left/center/right) and distance (near/medium/far),
-then produce natural-language navigation alerts.
+Uses YOLOv8 + MediaPipe + Color Analysis + Gemini AI for comprehensive
+object detection, hand tracking, color identification, and distance estimation.
 
 Features:
-  • Continuous frame capture via OpenCV
-  • YOLOv8n (nano) for fast inference
-  • Smart deduplication — only announces NEW or MOVED objects
-  • Thread-safe callback system for TTS integration
-  • Three modes: vision (continuous), navigation (obstacles only), off
+  • YOLOv8n for fast real-time object detection (80 COCO classes)
+  • Gemini Vision API for detailed recognition (airpods, pens, glasses, etc.)
+  • HSV-based color identification
+  • Approximate distance estimation in meters
+  • MediaPipe hand landmark tracking
+  • Thread-safe callback system for TTS
 
 Author : Arpit
 """
@@ -19,6 +19,8 @@ import cv2
 import time
 import threading
 import datetime
+import numpy as np
+import os
 from collections import defaultdict, deque
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
@@ -35,10 +37,19 @@ except ImportError:
     print("⚠️  ultralytics not installed. Run: pip install ultralytics")
 
 # ─────────────────────────────────────────────
+# TRY TO IMPORT GEMINI FOR DETAILED RECOGNITION
+# ─────────────────────────────────────────────
+try:
+    import google.generativeai as genai
+    import PIL.Image
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
+    GEMINI_VISION = True
+except ImportError:
+    GEMINI_VISION = False
+
+# ─────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────
-
-# Objects considered obstacles/dangerous for navigation
 OBSTACLE_CLASSES = {
     "car", "truck", "bus", "motorcycle", "bicycle",
     "dog", "cat", "horse",
@@ -49,57 +60,146 @@ OBSTACLE_CLASSES = {
     "potted plant", "parking meter",
 }
 
-# Small objects that can be held in hand
 HOLDABLE_OBJECTS = {
     "bottle", "cup", "cell phone", "remote", "scissors",
     "toothbrush", "knife", "fork", "spoon", "book",
     "apple", "banana", "orange", "sandwich", "donut",
     "mouse", "keyboard", "umbrella", "handbag",
+    "wine glass", "vase", "teddy bear",
 }
 
-# Minimum confidence threshold for detections
-CONFIDENCE_THRESHOLD = 0.40
-
-# How long (seconds) before re-announcing the SAME scene signature
+CONFIDENCE_THRESHOLD = 0.35
 ANNOUNCE_COOLDOWN = 8.0
+FRAME_INTERVAL = 1.2
 
-# Frame processing interval (seconds)
-FRAME_INTERVAL = 1.5
+# Known average widths (cm) for distance estimation
+KNOWN_WIDTHS = {
+    "person": 45, "car": 180, "truck": 250, "bus": 280,
+    "motorcycle": 80, "bicycle": 60, "chair": 50, "couch": 180,
+    "bottle": 8, "cup": 8, "cell phone": 7, "laptop": 35,
+    "keyboard": 45, "mouse": 6, "remote": 5, "book": 15,
+    "tv": 100, "refrigerator": 70, "bed": 150, "dining table": 120,
+    "dog": 40, "cat": 25, "backpack": 35, "umbrella": 25,
+    "handbag": 30, "suitcase": 50, "apple": 8, "banana": 15,
+    "orange": 8, "scissors": 10, "toothbrush": 3, "clock": 25,
+}
+FOCAL_LENGTH_PX = 600  # approximate for standard webcam
+
+# ─────────────────────────────────────────────
+# COLOR DETECTION
+# ─────────────────────────────────────────────
+COLOR_RANGES = [
+    ("red",      [(0, 70, 50), (10, 255, 255)]),
+    ("red",      [(170, 70, 50), (180, 255, 255)]),
+    ("orange",   [(11, 70, 50), (25, 255, 255)]),
+    ("yellow",   [(26, 70, 50), (34, 255, 255)]),
+    ("green",    [(35, 70, 50), (85, 255, 255)]),
+    ("blue",     [(86, 70, 50), (130, 255, 255)]),
+    ("purple",   [(131, 70, 50), (160, 255, 255)]),
+    ("pink",     [(161, 70, 50), (169, 255, 255)]),
+]
+
+def detect_color(frame, bbox):
+    """Extract dominant color from bounding box region using HSV analysis."""
+    x1, y1, x2, y2 = bbox
+    h, w = frame.shape[:2]
+    # Clamp to frame
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w, x2), min(h, y2)
+    if x2 - x1 < 5 or y2 - y1 < 5:
+        return "unknown"
+
+    # Take center 60% of the ROI to avoid edges
+    cx, cy = (x2 - x1) // 5, (y2 - y1) // 5
+    roi = frame[y1 + cy:y2 - cy, x1 + cx:x2 - cx]
+    if roi.size == 0:
+        roi = frame[y1:y2, x1:x2]
+    if roi.size == 0:
+        return "unknown"
+
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+    # Check for achromatic colors first (black, white, gray)
+    avg_s = np.mean(hsv[:, :, 1])
+    avg_v = np.mean(hsv[:, :, 2])
+
+    if avg_v < 40:
+        return "black"
+    if avg_s < 30 and avg_v > 200:
+        return "white"
+    if avg_s < 40:
+        return "gray"
+    if avg_s < 50 and 80 < avg_v < 200:
+        return "gray"
+
+    # Check chromatic colors
+    best_color = "unknown"
+    best_count = 0
+    for name, (lower, upper) in COLOR_RANGES:
+        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
+        count = cv2.countNonZero(mask)
+        if count > best_count:
+            best_count = count
+            best_color = name
+
+    total_px = hsv.shape[0] * hsv.shape[1]
+    if best_count < total_px * 0.1:
+        # Less than 10% match — use average hue
+        avg_h = np.mean(hsv[:, :, 0])
+        if avg_h < 10 or avg_h > 170:
+            return "red"
+        elif avg_h < 25:
+            return "orange"
+        elif avg_h < 35:
+            return "yellow"
+        elif avg_h < 85:
+            return "green"
+        elif avg_h < 130:
+            return "blue"
+        elif avg_h < 160:
+            return "purple"
+        else:
+            return "pink"
+
+    return best_color
+
+
+def estimate_distance_meters(cls_name, bbox_width_px):
+    """Estimate distance in meters using known object widths."""
+    known_w = KNOWN_WIDTHS.get(cls_name, 30)  # default 30cm
+    if bbox_width_px < 5:
+        return 10.0
+    dist_cm = (known_w * FOCAL_LENGTH_PX) / bbox_width_px
+    return round(dist_cm / 100.0, 1)
 
 
 class VisionSystem:
     """
-    Manages the webcam, runs YOLOv8 inference, and generates
-    navigation-friendly spoken descriptions for blind users.
+    Manages webcam, YOLOv8 inference, MediaPipe hands, color detection,
+    distance estimation, and Gemini-based detailed recognition.
     """
 
     def __init__(self, speak_callback=None):
-        """
-        Args:
-            speak_callback: A callable(text: str) that queues text for TTS.
-        """
         self.speak = speak_callback or (lambda t: print(f"[VISION] {t}"))
 
         # State
         self._running = False
         self._thread = None
         self._cap = None
-        self._mode = "off"          # "off" | "vision" | "navigation"
+        self._mode = "off"
         self._lock = threading.Lock()
-
-        # Smart filtering: tracks {(class_name, zone): last_announce_time}
         self._announced = defaultdict(float)
 
-        # Load YOLOv8 model (nano for speed)
+        # Load YOLOv8
         self._model = None
         if YOLO_AVAILABLE:
             try:
-                self._model = YOLO("yolov8n.pt")  # auto-downloads ~6 MB
+                self._model = YOLO("yolov8n.pt")
                 print("✅ YOLOv8n model loaded successfully.")
             except Exception as e:
                 print(f"❌ Failed to load YOLO model: {e}")
 
-        # Load MediaPipe Hands (Tasks API)
+        # Load MediaPipe Hands
         try:
             base_options = mp_python.BaseOptions(model_asset_path='hand_landmarker.task')
             options = mp_vision.HandLandmarkerOptions(
@@ -114,21 +214,31 @@ class VisionSystem:
             self.hand_landmarker = None
             print(f"❌ Failed to load Hand Landmarker: {e}")
 
-        # Latest frame for UI display (thread-safe)
-        self._latest_frame = None
-        self._frame_lock = threading.Lock()
+        # Gemini model for detailed recognition
+        self._gemini_model = None
+        if GEMINI_VISION:
+            try:
+                self._gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                print("✅ Gemini Vision model ready.")
+            except Exception:
+                pass
 
-        # Detection event log (for UI polling)
+        # Thread-safe storage
+        self._latest_frame = None
+        self._latest_raw_frame = None
+        self._frame_lock = threading.Lock()
         self._detection_log = deque(maxlen=50)
         self._log_lock = threading.Lock()
-
-        # Latest detections for direction indicators
         self._latest_detections = []
         self._latest_hand_results = None
         self._latest_frame_shape = None
         self._det_lock = threading.Lock()
 
-        # Auto-start camera immediately
+        # Gemini cache for detailed queries
+        self._gemini_cache = {"text": None, "t": 0}
+        self._gemini_lock = threading.Lock()
+
+        # Auto-start
         self._start("vision")
 
     # ─────────────────────────────────────────
@@ -144,15 +254,12 @@ class VisionSystem:
         return self._running
 
     def start_vision_mode(self):
-        """Start continuous detection (all objects)."""
         self._start("vision")
 
     def start_navigation_mode(self):
-        """Start navigation mode (obstacles + path guidance)."""
         self._start("navigation")
 
     def stop(self):
-        """Stop the camera and detection loop."""
         with self._lock:
             if not self._running:
                 return
@@ -165,17 +272,26 @@ class VisionSystem:
         self._mode = "off"
         print("📷 Camera stopped.")
 
+    # ─────────────────────────────────────────
+    # QUERY METHODS
+    # ─────────────────────────────────────────
+
     def query_hand(self):
         with self._det_lock:
             hand_results = getattr(self, '_latest_hand_results', None)
             objects = list(self._latest_detections)
             frame_shape = getattr(self, '_latest_frame_shape', None)
 
-        # --- Strategy 1: MediaPipe bounding box overlap ---
+        raw_frame = None
+        with self._frame_lock:
+            if self._latest_raw_frame is not None:
+                raw_frame = self._latest_raw_frame.copy()
+
+        # Strategy 1: MediaPipe overlap
         if frame_shape and hand_results and hand_results.hand_landmarks:
             h, w = frame_shape[:2]
             for hand_landmarks, handedness in zip(hand_results.hand_landmarks, hand_results.handedness):
-                hand_label = handedness[0].category_name  # "Left" or "Right"
+                hand_label = handedness[0].category_name
                 x_min = min(lm.x for lm in hand_landmarks) * w
                 y_min = min(lm.y for lm in hand_landmarks) * h
                 x_max = max(lm.x for lm in hand_landmarks) * w
@@ -185,36 +301,57 @@ class VisionSystem:
                         continue
                     ox1, oy1, ox2, oy2 = obj['bbox']
                     if x_min < ox2 and x_max > ox1 and y_min < oy2 and y_max > oy1:
-                        return f"You are holding a {obj['class']}"
+                        color = obj.get('color', '')
+                        c_str = f"{color} " if color and color != 'unknown' else ""
+                        return f"You are holding a {c_str}{obj['class']}"
 
-        # --- Strategy 2: Fallback — very close holdable object ---
+        # Strategy 2: Fallback holdable
         for obj in objects:
             if obj['distance'] == 'very close' and obj['class'] in HOLDABLE_OBJECTS:
-                return f"You are holding a {obj['class']}"
+                color = obj.get('color', '')
+                c_str = f"{color} " if color and color != 'unknown' else ""
+                return f"You are holding a {c_str}{obj['class']}"
 
-        return "I cannot detect anything"
+        # Strategy 3: Ask Gemini for hand region
+        if raw_frame is not None and self._gemini_model:
+            return self._gemini_hand_query(raw_frame)
+
+        return "I cannot detect anything in your hand"
+
+    def _gemini_hand_query(self, frame):
+        """Use Gemini to identify what's in the hand."""
+        try:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = PIL.Image.fromarray(rgb)
+            prompt = ("You are an assistant for blind users. Look at this image. "
+                      "What is the person holding in their hand? "
+                      "Reply in exactly one short sentence like: 'You are holding a pen' "
+                      "If nothing, say 'I cannot detect anything in your hand'")
+            resp = self._gemini_model.generate_content([prompt, img])
+            return resp.text.strip().split('\n')[0][:100]
+        except Exception:
+            return "I cannot detect anything in your hand"
 
     def query_front(self):
         with self._det_lock:
             objects = list(self._latest_detections)
 
-        # Priority: closest + center object, ignore person far away
-        center = [
-            obj for obj in objects
-            if obj['zone'] == 'center' and obj['class'] != 'person'
-        ]
-        # Sort by area ratio (larger = closer)
+        center = [o for o in objects if o['zone'] == 'center' and o['class'] != 'person']
         center.sort(key=lambda o: o.get('area_ratio', 0), reverse=True)
 
-        if not center:
-            # fallback: nearest object in any zone
-            non_person = [o for o in objects if o['class'] != 'person']
-            non_person.sort(key=lambda o: o.get('area_ratio', 0), reverse=True)
-            if non_person:
-                return f"{non_person[0]['class']} in front of you"
-            return "I cannot detect anything"
+        if center:
+            obj = center[0]
+            dist = obj.get('distance_m', '')
+            d_str = f", about {dist} meters away" if dist else ""
+            return f"{obj['class']} in front of you{d_str}"
 
-        return f"{center[0]['class']} in front of you"
+        non_person = [o for o in objects if o['class'] != 'person']
+        non_person.sort(key=lambda o: o.get('area_ratio', 0), reverse=True)
+        if non_person:
+            obj = non_person[0]
+            return f"{obj['class']} {obj['zone']}, {obj.get('distance_m', '')} meters away"
+
+        return "Nothing detected in front"
 
     def query_path(self):
         with self._det_lock:
@@ -222,26 +359,21 @@ class VisionSystem:
 
         for obj in objects:
             if obj['zone'] == 'center' and obj['distance'] in ('very close', 'near') and obj['class'] != 'person':
-                return "No, obstacle ahead"
+                d = obj.get('distance_m', '')
+                return f"No, {obj['class']} ahead about {d} meters away"
 
         return "Yes, path is clear"
 
     def query_person_holding(self):
-        """Detect what a nearby person is holding."""
         with self._det_lock:
-            hand_results = getattr(self, '_latest_hand_results', None)
             objects = list(self._latest_detections)
-            frame_shape = getattr(self, '_latest_frame_shape', None)
 
-        # Find a person that is NOT very close (i.e. in front, not the user)
         person_objs = [o for o in objects if o['class'] == 'person' and o['distance'] != 'very close']
         if not person_objs:
             return "I cannot see a person in front"
 
-        person = person_objs[0]  # take the nearest/most prominent
+        person = person_objs[0]
         px1, py1, px2, py2 = person['bbox']
-
-        # Expand bbox slightly to capture hand-held items near the person
         margin = 40
         epx1, epy1, epx2, epy2 = px1 - margin, py1 - margin, px2 + margin, py2 + margin
 
@@ -249,24 +381,116 @@ class VisionSystem:
             if obj['class'] == 'person':
                 continue
             ox1, oy1, ox2, oy2 = obj['bbox']
-            # Check if object is inside or near the person's bounding box
             if ox1 < epx2 and ox2 > epx1 and oy1 < epy2 and oy2 > epy1:
                 return f"The person in front is holding a {obj['class']}"
 
         return "I cannot tell what the person is holding"
 
+    def query_color(self, target=None):
+        """Query the color of an object or clothing."""
+        with self._det_lock:
+            objects = list(self._latest_detections)
+
+        if target:
+            t = target.lower()
+            for obj in objects:
+                if t in obj['class'].lower():
+                    c = obj.get('color', 'unknown')
+                    return f"The {obj['class']} is {c}"
+            # Check clothing on person
+            if any(w in t for w in ['cloth', 'shirt', 'wear', 'kapda', 'dress']):
+                persons = [o for o in objects if o['class'] == 'person']
+                if persons:
+                    c = persons[0].get('color', 'unknown')
+                    return f"The clothing color appears to be {c}"
+
+        # Default: describe colors of all visible objects
+        if objects:
+            descs = []
+            for obj in objects[:3]:
+                c = obj.get('color', 'unknown')
+                if c != 'unknown':
+                    descs.append(f"{c} {obj['class']}")
+            if descs:
+                return "I can see: " + ", ".join(descs)
+
+        return "I cannot determine the color right now"
+
+    def query_distance(self, target=None):
+        """Query distance of a specific object or nearest object."""
+        with self._det_lock:
+            objects = list(self._latest_detections)
+
+        if target:
+            t = target.lower()
+            for obj in objects:
+                if t in obj['class'].lower():
+                    d = obj.get('distance_m', 'unknown')
+                    return f"The {obj['class']} is about {d} meters away, {obj['zone']}"
+
+        # Default: nearest object
+        if objects:
+            nearest = min(objects, key=lambda o: o.get('distance_m', 999))
+            d = nearest.get('distance_m', 'unknown')
+            return f"Nearest object is {nearest['class']}, about {d} meters away, {nearest['zone']}"
+
+        return "No objects detected"
+
+    def query_scene_detailed(self):
+        """Use Gemini to give a detailed scene description."""
+        raw_frame = None
+        with self._frame_lock:
+            if self._latest_raw_frame is not None:
+                raw_frame = self._latest_raw_frame.copy()
+
+        if raw_frame is None:
+            return "Camera not ready"
+
+        # Cache for 5 seconds
+        with self._gemini_lock:
+            if time.time() - self._gemini_cache["t"] < 5 and self._gemini_cache["text"]:
+                return self._gemini_cache["text"]
+
+        if not self._gemini_model:
+            # Fallback to YOLO detections
+            with self._det_lock:
+                objects = list(self._latest_detections)
+            if objects:
+                items = [f"{o['class']} ({o['zone']}, {o.get('distance_m','')}m)" for o in objects[:5]]
+                return "I can see: " + ", ".join(items)
+            return "Nothing detected"
+
+        try:
+            rgb = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2RGB)
+            img = PIL.Image.fromarray(rgb)
+            prompt = ("You are an assistant for blind users. Describe what you see in 2-3 short sentences. "
+                      "Mention ALL objects including small items like pens, glasses, airpods, keys, etc. "
+                      "Include colors and approximate distances. Be specific and helpful.")
+            resp = self._gemini_model.generate_content([prompt, img])
+            result = resp.text.strip()[:200]
+            with self._gemini_lock:
+                self._gemini_cache = {"text": result, "t": time.time()}
+            return result
+        except Exception as e:
+            return f"Scene analysis unavailable: {str(e)[:50]}"
+
+    def describe_scene(self):
+        """Backward compatibility wrapper."""
+        return self.query_scene_detailed()
+
+    # ─────────────────────────────────────────
+    # DATA ACCESS
+    # ─────────────────────────────────────────
+
     def get_latest_frame(self):
-        """Return the most recent annotated frame (for UI display)."""
         with self._frame_lock:
             return self._latest_frame.copy() if self._latest_frame is not None else None
 
     def get_detection_log(self, count=20):
-        """Return recent detection events as list of dicts."""
         with self._log_lock:
             return list(self._detection_log)[-count:]
 
     def get_latest_detections(self):
-        """Return the latest frame's raw detections for UI direction indicators."""
         with self._det_lock:
             return list(self._latest_detections)
 
@@ -278,10 +502,8 @@ class VisionSystem:
         if self._running:
             self._mode = mode
             return
-
         if self._model is None:
             return
-
         self._mode = mode
         self._running = True
         self._announced.clear()
@@ -289,7 +511,6 @@ class VisionSystem:
         self._thread.start()
 
     def _camera_loop(self):
-        """Main loop: captures frames and runs detection at intervals."""
         self._cap = cv2.VideoCapture(0)
         if not self._cap.isOpened():
             self.speak("I cannot access the camera. Please check the connection.")
@@ -305,29 +526,31 @@ class VisionSystem:
                 time.sleep(0.1)
                 continue
 
+            # Store raw frame for Gemini queries
+            with self._frame_lock:
+                self._latest_raw_frame = frame.copy()
+
             now = time.time()
             if now - last_process_time >= FRAME_INTERVAL:
                 last_process_time = now
                 detections = self._detect(frame)
-                
+
                 # MediaPipe hand detection
                 if getattr(self, 'hand_landmarker', None):
-                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB,
+                                        data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                     hand_results = self.hand_landmarker.detect(mp_image)
                 else:
                     hand_results = None
 
-                # Store latest detections safely
                 with self._det_lock:
                     self._latest_detections = detections
                     self._latest_hand_results = hand_results
                     self._latest_frame_shape = frame.shape
 
-                # Draw annotations on frame
                 annotated = self._draw_annotations(frame.copy(), detections, hand_results)
                 with self._frame_lock:
                     self._latest_frame = annotated
-
             else:
                 with self._frame_lock:
                     self._latest_frame = frame.copy()
@@ -342,18 +565,14 @@ class VisionSystem:
             self._cap = None
 
     # ─────────────────────────────────────────
-    # DETECTION & DESCRIPTION
+    # DETECTION
     # ─────────────────────────────────────────
 
     def _detect(self, frame):
-        """
-        Run YOLOv8 on a frame. Returns list of dicts:
-        [{"class": str, "confidence": float, "zone": str, "distance": str, "bbox": tuple}]
-        """
         results = self._model(frame, verbose=False, conf=CONFIDENCE_THRESHOLD)
         h, w = frame.shape[:2]
-
         detections = []
+
         for r in results:
             for box in r.boxes:
                 cls_id = int(box.cls[0])
@@ -362,11 +581,11 @@ class VisionSystem:
 
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 cx = (x1 + x2) / 2
-                cy = (y1 + y2) / 2
-                box_area = (x2 - x1) * (y2 - y1)
+                box_w = x2 - x1
+                box_area = box_w * (y2 - y1)
                 frame_area = w * h
 
-                # Position (horizontal)
+                # Zone
                 if cx < w / 3:
                     zone = "left"
                 elif cx < 2 * w / 3:
@@ -374,7 +593,7 @@ class VisionSystem:
                 else:
                     zone = "right"
 
-                # Distance estimation (based on bounding box area ratio)
+                # Distance (qualitative)
                 area_ratio = box_area / frame_area
                 if area_ratio > 0.15:
                     distance = "very close"
@@ -385,25 +604,30 @@ class VisionSystem:
                 else:
                     distance = "far"
 
+                # Distance in meters
+                dist_m = estimate_distance_meters(cls_name, box_w)
+
+                # Color
+                color = detect_color(frame, (int(x1), int(y1), int(x2), int(y2)))
+
                 detections.append({
                     "class": cls_name,
                     "confidence": conf,
                     "zone": zone,
                     "distance": distance,
+                    "distance_m": dist_m,
+                    "color": color,
                     "bbox": (int(x1), int(y1), int(x2), int(y2)),
                     "area_ratio": area_ratio,
                 })
 
         return detections
 
-    # (Removed automatic continuous speaking logic to enforce strict command-only mode)
-
     # ─────────────────────────────────────────
     # UTILITIES
     # ─────────────────────────────────────────
 
     def _add_log_entry(self, obj_class, zone, distance, level="info"):
-        """Add a timestamped detection event to the log."""
         entry = {
             "time": datetime.datetime.now().strftime("%H:%M:%S"),
             "object": obj_class,
@@ -415,45 +639,42 @@ class VisionSystem:
             self._detection_log.append(entry)
 
     def _draw_annotations(self, frame, detections, hand_results=None):
-        """Draw bounding boxes and labels on the frame."""
         COLORS = {
-            "very close": (0, 0, 255),    # Red
-            "near":       (0, 165, 255),  # Orange
-            "a few meters away": (0, 255, 255),  # Yellow
-            "far":        (0, 255, 0),    # Green
+            "very close": (0, 0, 255),
+            "near":       (0, 165, 255),
+            "a few meters away": (0, 255, 255),
+            "far":        (0, 255, 0),
         }
         for det in detections:
             x1, y1, x2, y2 = det["bbox"]
             color = COLORS.get(det["distance"], (255, 255, 255))
-            # Draw box
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            # Label with background
-            label = f"{det['class']} ({det['zone']})"
+            # Label with distance + color
+            d_m = det.get('distance_m', '')
+            c_name = det.get('color', '')
+            label = f"{det['class']} {d_m}m"
+            if c_name and c_name != 'unknown':
+                label = f"{c_name} {det['class']} {d_m}m"
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(frame, (x1, y1 - th - 8), (x1 + tw + 4, y1), color, -1)
             cv2.putText(frame, label, (x1 + 2, y1 - 4),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+
         if getattr(hand_results, 'hand_landmarks', None):
             for hand_landmarks in hand_results.hand_landmarks:
-                # Draw just a simple bounding box or dot for the hand based on landmarks
                 x_min = int(min([lm.x for lm in hand_landmarks]) * frame.shape[1])
                 y_min = int(min([lm.y for lm in hand_landmarks]) * frame.shape[0])
                 x_max = int(max([lm.x for lm in hand_landmarks]) * frame.shape[1])
                 y_max = int(max([lm.y for lm in hand_landmarks]) * frame.shape[0])
                 cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (255, 0, 255), 2)
-                cv2.putText(frame, "HAND", (x_min, y_min - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-                
+                cv2.putText(frame, "HAND", (x_min, y_min - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+
         return frame
 
     @staticmethod
     def _direction_text(zone):
-        mapping = {
-            "left": "on your left",
-            "center": "directly ahead",
-            "right": "on your right",
-        }
-        return mapping.get(zone, "ahead")
-
+        return {"left": "on your left", "center": "directly ahead", "right": "on your right"}.get(zone, "ahead")
 
 
 # ─────────────────────────────────────────────
@@ -464,14 +685,7 @@ if __name__ == "__main__":
         print(f"🔊 {text}")
 
     vision = VisionSystem(speak_callback=test_speak)
-
-    print("\n=== One-shot scene description ===")
-    desc = vision.describe_scene()
-    print(f"📝 {desc}")
-
     print("\n=== Starting vision mode (press Ctrl+C to stop) ===")
-    vision.start_vision_mode()
-
     try:
         while vision.is_running:
             time.sleep(1)
