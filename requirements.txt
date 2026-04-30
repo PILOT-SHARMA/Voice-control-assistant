@@ -6,9 +6,6 @@
 
 # --- Core Speech ---
 SpeechRecognition>=3.10.0     # Voice-to-text via Google API
-PyAudio>=0.2.14               # Microphone access
-
-# --- Text-to-Speech (fallback for non-macOS) ---
 pyttsx3>=2.90                 # Offline TTS engine
 
 # --- Web Framework ---
