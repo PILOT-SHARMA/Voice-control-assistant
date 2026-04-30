@@ -1,21 +1,28 @@
 # ==========================================
-# Voice-Controlled Assistant - Dependencies
+# Real-Time AI Voice Assistant for Blind Users
 # ==========================================
-# Install all dependencies at once with:
+# Install all dependencies:
 #   pip install -r requirements.txt
 # ==========================================
 
-# Speech Recognition — converts voice to text using Google API (free)
-SpeechRecognition>=3.10.0
+# --- Core Speech ---
+SpeechRecognition>=3.10.0     # Voice-to-text via Google API
+PyAudio>=0.2.14               # Microphone access
 
-# PyAudio — required by SpeechRecognition to access the microphone
-PyAudio>=0.2.14
+# --- Text-to-Speech (fallback for non-macOS) ---
+pyttsx3>=2.90                 # Offline TTS engine
 
-# pyttsx3 — offline text-to-speech engine (no internet needed)
-pyttsx3>=2.90
+# --- Web Framework ---
+Flask>=3.0.0                  # Web server
+flask-cors>=4.0.0             # Cross-origin support
 
-# Flask — Python web framework for frontend
-Flask>=3.0.0
+# --- Computer Vision ---
+opencv-python>=4.8.0          # Webcam capture & image processing
+ultralytics>=8.0.0            # YOLOv8 object detection
 
-# Flask-CORS — Handles cross-origin requests for API calls
-flask-cors>=4.0.0
+# --- AI Image Analysis (optional, uses Gemini) ---
+google-generativeai>=0.4.0    # Google Gemini API
+Pillow>=10.0.0                # Image handling
+
+# --- Environment ---
+python-dotenv>=1.0.0          # .env file support

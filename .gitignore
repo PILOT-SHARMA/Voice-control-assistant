@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+*.py[cod]
 
 # macOS
 .DS_Store
@@ -16,6 +17,15 @@ __pycache__/
 .vscode/
 .idea/
 
-# Byte-compiled
-*.py[cod]
+# Environment secrets — DO NOT COMMIT
+.env
 
+# Large model files — download separately
+yolov8n.pt
+hand_landmarker.task
+
+# Chat history
+chat_history.json
+
+# Logs
+*.log

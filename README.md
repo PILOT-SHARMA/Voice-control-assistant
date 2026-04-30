@@ -1,111 +1,125 @@
-# 🎙️ Voice-Controlled Assistant
+# 👁️ VisionGuide — Real-Time AI Voice Assistant for Blind Users
 
-A Python-based voice assistant that listens to your voice commands and performs tasks like opening websites, telling the time, searching the web, playing music, and having natural conversations. **Now with a beautiful, Gemini-styled web interface!**
-
-**Built for:** College Mini Project / Viva Presentation  
-**Tech Stack:** Python, Flask, HTML/CSS/JS, SpeechRecognition, pyttsx3, datetime, webbrowser, os
+> A fully voice-controlled, computer-vision-powered assistant designed to help visually impaired users navigate their surroundings hands-free.
 
 ---
 
-## ✨ Features
+## 🎯 What It Does
 
-| Feature | Example Command |
+VisionGuide uses your **live webcam**, **YOLOv8 object detection**, and **MediaPipe hand tracking** to understand the world around you — then answers your voice commands in real time with short, direct spoken responses.
+
+No wearable required. Just open the browser and speak.
+
+---
+
+## 🗣️ Voice Commands
+
+| Command | Response |
 |---|---|
-| 🌐 Open Websites | "Open YouTube", "Open Google" |
-| 🕐 Tell Time | "What time is it?" |
-| 📅 Tell Date | "What is today's date?" |
-| 🔍 Web Search | "Search for Python tutorials" |
-| 🎵 Play Music | "Play music", "Play a song" |
-| 👋 Greetings | "Hello", "How are you?" |
-| 🛑 Exit | "Stop", "Bye", "Goodbye" |
-| 🗣️ Wake Word | "Hey Assistant" (optional) |
+| `"What is in my hand?"` | *"You are holding a bottle"* |
+| `"What is in front of me?"` | *"Chair in front of you"* |
+| `"What is the person holding?"` | *"The person in front is holding a phone"* |
+| `"Can I move forward?"` | *"Yes, path is clear"* or *"No, obstacle ahead"* |
+| `"Open YouTube"` | Opens YouTube in browser |
+| `"Open Chrome"` | Opens Chrome app |
+| `"What time is it?"` | *"It is 09:30 PM"* |
 
 ---
 
-## 📁 Folder Structure
+## 🧠 Tech Stack
 
-```
-Voice-assistant/
-├── app.py                # NEW: Flask server for web UI
-├── assistant.py          # Core logic and terminal app
-├── requirements.txt      # Dependencies list
-├── chat_history.json     # Auto-saves chat sessions
-├── README.md             # Documentation
-├── music/                # Put your .mp3 / .wav files here
-│   └── .gitkeep
-└── templates/
-    └── index.html        # NEW: Beautiful frontend (HTML/CSS/JS)
-```
+| Layer | Technology |
+|---|---|
+| Object Detection | [YOLOv8n](https://github.com/ultralytics/ultralytics) |
+| Hand Tracking | [MediaPipe HandLandmarker (Tasks API)](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) |
+| Backend | Python · Flask |
+| Speech Recognition | Web Speech API (browser) |
+| Text-to-Speech | macOS `say` (Daniel voice) / pyttsx3 |
+| UI | Vanilla HTML · CSS · JS (Dark glassmorphism) |
 
 ---
 
-## 🚀 How to Install and Run
+## ⚡ Features
 
-### Prerequisites
-- Python 3.8 or higher installed
-- A working microphone
-- Internet connection
+- 📷 **Camera always ON** — starts automatically when app loads
+- 🤚 **Hand-object overlap detection** — knows what you're holding
+- 🧭 **3-zone navigation** — LEFT / CENTER / RIGHT with real-time indicators
+- 🎙️ **Continuous voice recognition** — auto-restarts after each phrase
+- 🔇 **Strict command-only responses** — never speaks unless asked
+- 📋 **Live detection log** — scrollable timestamped feed
+- 🌐 **Open any app or website** by voice
 
-### Step 1: Install Dependencies
+---
 
-Open a terminal in the project folder and run:
+## 🚀 Quick Start
+
+### 1. Clone the repo
 ```bash
+git clone https://github.com/PILOT-SHARMA/Voice-control-assistant.git
+cd Voice-control-assistant
+```
+
+### 2. Create virtual environment & install dependencies
+```bash
+python3 -m venv venv
+source venv/bin/activate        # macOS/Linux
 pip install -r requirements.txt
 ```
 
-> **Note for macOS users:** If `PyAudio` fails to install, first run `brew install portaudio` then `pip install pyaudio`.
-
-### Step 2: Add Music (Optional)
-
-Place any `.mp3` or `.wav` files in the `music/` folder.
-
----
-
-## 🌐 Running the Web Interface (NEW)
-
-The easiest and best way to use the assistant!
-
-1. Run the Flask server:
+### 3. Download model files
 ```bash
-python app.py
+# YOLOv8 nano — auto-downloads on first run
+
+# MediaPipe Hand Landmarker
+curl -L https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task \
+     -o hand_landmarker.task
 ```
 
-2. Open your browser and go to:
-[http://localhost:5000](http://localhost:5000)
-
-3. Click the 🎤 microphone button or type a command.
-
-*Features in Web UI:*
-- Clean Gemini-like dark theme
-- Persistent Chat History (Sidebar)
-- Export chat logs as `.txt` files
-- Fully responsive on mobile
-
----
-
-## 🎤 Running the Terminal Version
-
-You can still run the old terminal-only version if you prefer:
+### 4. Set up environment (optional — for Gemini image analysis)
 ```bash
-python assistant.py
+cp .env.example .env
+# Add your GEMINI_API_KEY inside .env
 ```
 
-Say **"Stop"** or **"Exit"** to quit.
+### 5. Run
+```bash
+python main.py
+```
+
+Open **http://localhost:5001** in **Chrome**.
 
 ---
 
-## 🛠️ Troubleshooting
+## 📁 Project Structure
 
-| Problem | Solution |
-|---|---|
-| Microphone not working (Web) | Make sure you click "Allow" when the browser asks for microphone permission. |
-| Microphone not working (Terminal) | Check permissions in System Settings → Privacy → Microphone |
-| "Could not understand audio" | Speak clearly, reduce background noise |
-| Internet error | Check your WiFi connection (Google API needs internet) |
-| No music plays | Add `.mp3`/`.wav` files to the `music/` folder |
+```
+Voice-control-assistant/
+├── main.py              # Entry point (web or terminal mode)
+├── app.py               # Flask API server
+├── assistant.py         # Voice I/O + command routing
+├── camera.py            # YOLOv8 + MediaPipe vision engine
+├── templates/
+│   └── index.html       # Web UI (dark glassmorphism)
+├── requirements.txt
+└── .env.example
+```
+
+---
+
+## 🛡️ Usage Notes
+
+- Use **Google Chrome** for best voice recognition support
+- Microphone permission must be allowed in the browser
+- Model files (`yolov8n.pt`, `hand_landmarker.task`) are excluded from this repo due to size — download them as shown above
+
+---
+
+## 👨‍💻 Author
+
+**Arpit Sharma** · [@PILOT-SHARMA](https://github.com/PILOT-SHARMA)
 
 ---
 
 ## 📄 License
 
-This project is created for educational purposes. Feel free to use and modify it.
+MIT License — free to use, modify, and distribute.
